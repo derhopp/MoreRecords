@@ -1,18 +1,18 @@
 {
   "domain": "more_records",
   "name": "MoreRecords",
-  "version": "0.1.0",
+  "codeowners": [
+    "@derhopp"
+  ],
   "config_flow": true,
-  "integration_type": "service",
   "dependencies": [
     "recorder",
     "file_upload"
   ],
   "documentation": "https://github.com/derhopp/MoreRecords",
-  "issue_tracker": "https://github.com/derhopp/MoreRecords/issues",
-  "codeowners": [
-    "@derhopp"
-  ],
+  "integration_type": "service",
   "iot_class": "local_push",
-  "requirements": []
+  "issue_tracker": "https://github.com/derhopp/MoreRecords/issues",
+  "requirements": [],
+  "version": "0.1.0"
 }
