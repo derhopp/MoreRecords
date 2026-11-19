@@ -1,0 +1,9 @@
+.pytest_cache/
+__pycache__/
+*.py[cod]
+.venv/
+.coverage
+htmlcov/
+*.db
+*.db-wal
+*.db-shm

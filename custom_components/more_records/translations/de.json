@@ -1,0 +1,42 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "MoreRecords einrichten",
+        "description": "Aktiviere den CSV-Historienimport. Über Konfigurieren kannst du eine CSV-Datei für eine bestehende Entität importieren."
+      }
+    },
+    "abort": {
+      "already_configured": "MoreRecords ist bereits eingerichtet."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Historische CSV-Daten importieren",
+        "description": "Wähle eine bestehende Entität und eine CSV-Datei mit Zeitstempel und Wert. Vor dem Import werden die Daten geprüft; dieser Schritt verändert den Recorder nicht.",
+        "data": {
+          "entity_id": "Zielentität",
+          "file": "CSV-Datei"
+        }
+      },
+      "confirm": {
+        "title": "Historischen Import bestätigen",
+        "description": "Ziel: {entity_id}\nZeilen: {count}\nCSV-Beginn (UTC): {first}\nCSV-Ende (UTC): {last}\nÄltester HA-Zustand (UTC): {oldest}\n\nDie Werte werden vor den bestehenden Zuständen eingefügt. Ein Home-Assistant-Backup wird dringend empfohlen. Bestätige nur, wenn recorder auto_purge deaktiviert ist.",
+        "data": {
+          "confirm": "Ich habe ein Backup und möchte diese Werte importieren"
+        }
+      }
+    },
+    "error": {
+      "invalid_entity": "Wähle einen vorhandenen, aufgezeichneten numerischen Sensor oder Binärsensor.",
+      "sqlite_only": "Diese Version unterstützt nur SQLite als Recorder.",
+      "purge_enabled": "Deaktiviere recorder auto_purge und starte Home Assistant neu.",
+      "invalid_csv": "CSV ungültig oder Werte passen nicht zum Entitätstyp. Details stehen im Home-Assistant-Protokoll.",
+      "missing_history": "Für die Entität ist noch kein Recorder-Verlauf vorhanden.",
+      "overlap": "Alle CSV-Zeitstempel müssen vor dem ältesten Recorder-Zustand liegen.",
+      "confirmation_required": "Du musst den Import ausdrücklich bestätigen.",
+      "import_failed": "Import fehlgeschlagen und zurückgerollt. Bitte Home-Assistant-Protokoll prüfen."
+    }
+  }
+}

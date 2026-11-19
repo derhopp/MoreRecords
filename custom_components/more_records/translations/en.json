@@ -1,0 +1,42 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Set up MoreRecords",
+        "description": "Enable the historical CSV importer. Use Configure to import a CSV file into an existing entity."
+      }
+    },
+    "abort": {
+      "already_configured": "MoreRecords is already configured."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Import historical CSV data",
+        "description": "Choose an existing entity and a two-column CSV file with timestamp and value. The file is checked before import. No recorder data is modified at this step.",
+        "data": {
+          "entity_id": "Target entity",
+          "file": "CSV file"
+        }
+      },
+      "confirm": {
+        "title": "Confirm historical import",
+        "description": "Target: {entity_id}\nRows: {count}\nCSV start (UTC): {first}\nCSV end (UTC): {last}\nEarliest existing HA state (UTC): {oldest}\n\nThe imported rows will be added before the existing states. A Home Assistant backup is strongly recommended. Do not confirm unless you have disabled recorder auto_purge.",
+        "data": {
+          "confirm": "I have a backup and want to import these rows"
+        }
+      }
+    },
+    "error": {
+      "invalid_entity": "Select an existing, recorded numeric sensor or binary sensor.",
+      "sqlite_only": "This version supports only the SQLite recorder.",
+      "purge_enabled": "Disable recorder auto_purge and restart Home Assistant before importing.",
+      "invalid_csv": "The CSV is invalid or its values do not match the entity type. Check the Home Assistant logs for details.",
+      "missing_history": "The selected entity has no existing recorder history.",
+      "overlap": "CSV timestamps must all precede the earliest existing recorder state.",
+      "confirmation_required": "You must explicitly confirm the import.",
+      "import_failed": "The import failed and was rolled back. Check the Home Assistant logs."
+    }
+  }
+}

@@ -1,0 +1,43 @@
+name: CI
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - run: python -m pip install pytest
+      - run: python -m pytest -q
+      - name: Validate metadata and translations
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          root = Path("custom_components/more_records")
+          for path in [Path("hacs.json"), root/"manifest.json", root/"strings.json", *sorted((root/"translations").glob("*.json"))]:
+              json.loads(path.read_text(encoding="utf-8"))
+              print("OK", path)
+          manifest = json.loads((root/"manifest.json").read_text())
+          assert manifest["domain"] == root.name
+          assert manifest["config_flow"] is True
+          assert {"en.json", "de.json"} <= {p.name for p in (root/"translations").glob("*.json")}
+          PY
+  hacs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hacs/action@main
+        with:
+          category: integration
+  hassfest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: home-assistant/actions/hassfest@master
