@@ -1,4 +1,4 @@
-"""Configuration and one-off import UI for MoreRecords."""
+"""Installation and one-shot CSV / CCU-Historian import wizard."""
 
 from __future__ import annotations
 
@@ -13,10 +13,25 @@ from homeassistant.components.file_upload import process_uploaded_file
 from homeassistant.components.recorder import get_instance, is_entity_recorded
 from homeassistant.config_entries import ConfigEntry, ConfigFlow, OptionsFlow
 from homeassistant.core import callback
-from homeassistant.helpers.selector import EntitySelector, FileSelector
+from homeassistant.helpers.aiohttp_client import async_get_clientsession
+from homeassistant.helpers.selector import (
+    DateSelector,
+    EntitySelector,
+    FileSelector,
+    SelectSelector,
+)
 
+from .ccu_historian import (
+    HistorianClient,
+    HistorianError,
+    HistorianPoint,
+    date_range_ms,
+    rpc_url,
+    search_points,
+)
 from .const import DOMAIN
 from .csv_import import CsvImportError, HistoryRow, parse_csv
+from .merge_policy import ImportPlan, plan_prefix
 from .recorder_import import (
     RecorderImportError,
     async_first_state_timestamp,
@@ -28,12 +43,12 @@ _LOGGER = logging.getLogger(__name__)
 
 
 class MoreRecordsConfigFlow(ConfigFlow, domain=DOMAIN):
-    """Install the import tool once, then use Configure for each CSV."""
+    """Install the import utility once; invoke Configure to import."""
 
     VERSION = 1
 
     async def async_step_user(self, user_input: dict[str, Any] | None = None):
-        """Set up the integration without creating any sensor entities."""
+        """Create the one-time config entry."""
         if self._async_current_entries():
             return self.async_abort(reason="already_configured")
         if user_input is not None:
@@ -43,76 +58,90 @@ class MoreRecordsConfigFlow(ConfigFlow, domain=DOMAIN):
     @staticmethod
     @callback
     def async_get_options_flow(config_entry: ConfigEntry) -> MoreRecordsOptionsFlow:
-        """Open the CSV import wizard from the integration Configure button."""
+        """Return the per-import wizard."""
         return MoreRecordsOptionsFlow()
 
 
 class MoreRecordsOptionsFlow(OptionsFlow):
-    """Read file, preview, and explicitly confirm a single import."""
+    """Choose a source, validate it, preview overlap and confirm atomically."""
 
     def __init__(self) -> None:
-        """Initialize temporary state for this wizard only."""
+        """The source data are held only for this options-flow session."""
         self._entity_id: str | None = None
+        self._source = "csv"
         self._rows: list[HistoryRow] = []
+        self._plan: ImportPlan | None = None
         self._preview: dict[str, str] = {}
+        self._ccu_url = ""
+        self._ccu_api_key = ""
+        self._points: list[HistorianPoint] = []
+        self._point_choices: list[HistorianPoint] = []
 
     def _load_uploaded_csv(self, file_id: str, time_zone: str) -> list[HistoryRow]:
-        """Consume and remove a Home Assistant temporary upload."""
+        """Consume Home Assistant's temporary upload safely in an executor."""
         with process_uploaded_file(self.hass, file_id) as path:
             return parse_csv(Path(path), time_zone)
 
+    def _target_valid(self, entity_id: str) -> bool:
+        """Fail closed unless the destination is a recorded supported entity."""
+        state = self.hass.states.get(entity_id)
+        if state is None:
+            return False
+        if entity_id.partition(".")[0] not in ("sensor", "binary_sensor"):
+            return False
+        return is_entity_recorded(self.hass, entity_id)
+
+    async def _prepare(self, rows: list[HistoryRow], label: str) -> None:
+        """Validate and preview; writes happen only in the confirm step."""
+        if self._entity_id is None or not self._target_valid(self._entity_id):
+            raise ValidationError("Destination entity is unavailable")
+        state = self.hass.states.get(self._entity_id)
+        normalized = validate_rows(
+            state, rows, datetime.now(timezone.utc).timestamp()
+        )
+        cutoff = await async_first_state_timestamp(self.hass, self._entity_id)
+        if cutoff is None:
+            raise RecorderImportError("No existing Recorder state")
+        plan = plan_prefix(normalized, cutoff)
+        if not plan.eligible:
+            raise RecorderImportError("All source rows overlap existing Recorder history")
+
+        self._rows = normalized
+        self._plan = plan
+        self._preview = {
+            "entity_id": self._entity_id,
+            "source": label,
+            "total": str(plan.total),
+            "importable": str(len(plan.eligible)),
+            "skipped": str(plan.skipped),
+            "first": datetime.fromtimestamp(
+                normalized[0].timestamp, timezone.utc
+            ).isoformat(),
+            "last": datetime.fromtimestamp(
+                normalized[-1].timestamp, timezone.utc
+            ).isoformat(),
+            "oldest": datetime.fromtimestamp(cutoff, timezone.utc).isoformat(),
+        }
+
     async def async_step_init(self, user_input: dict[str, Any] | None = None):
-        """Validate the destination and uploaded CSV before any writes."""
+        """Select a target entity and an import source."""
         errors: dict[str, str] = {}
         if user_input is not None:
             entity_id = user_input["entity_id"]
-            state = self.hass.states.get(entity_id)
             recorder = get_instance(self.hass)
-            if state is None or entity_id.split(".")[0] not in (
-                "sensor", "binary_sensor"
-            ) or not is_entity_recorded(self.hass, entity_id):
+            if not self._target_valid(entity_id):
                 errors["base"] = "invalid_entity"
             elif recorder.engine is None or recorder.engine.dialect.name != "sqlite":
                 errors["base"] = "sqlite_only"
             elif recorder.auto_purge:
                 errors["base"] = "purge_enabled"
             else:
-                try:
-                    rows = await self.hass.async_add_executor_job(
-                        self._load_uploaded_csv,
-                        user_input["file"],
-                        self.hass.config.time_zone,
-                    )
-                    rows = validate_rows(
-                        state, rows, datetime.now(tz=timezone.utc).timestamp()
-                    )
-                    earliest = await async_first_state_timestamp(
-                        self.hass, entity_id
-                    )
-                    if earliest is None:
-                        errors["base"] = "missing_history"
-                    elif rows[-1].timestamp >= earliest:
-                        errors["base"] = "overlap"
-                    else:
-                        self._entity_id = entity_id
-                        self._rows = rows
-                        self._preview = {
-                            "entity_id": entity_id,
-                            "count": str(len(rows)),
-                            "first": datetime.fromtimestamp(
-                                rows[0].timestamp, timezone.utc
-                            ).isoformat(),
-                            "last": datetime.fromtimestamp(
-                                rows[-1].timestamp, timezone.utc
-                            ).isoformat(),
-                            "oldest": datetime.fromtimestamp(
-                                earliest, timezone.utc
-                            ).isoformat(),
-                        }
-                        return await self.async_step_confirm()
-                except (CsvImportError, ValidationError, OSError, ValueError) as err:
-                    _LOGGER.warning("CSV preview rejected: %s", err)
-                    errors["base"] = "invalid_csv"
+                self._entity_id = entity_id
+                self._source = user_input["source"]
+                if self._source == "csv":
+                    return await self.async_step_csv()
+                return await self.async_step_historian_connect()
+
         return self.async_show_form(
             step_id="init",
             data_schema=vol.Schema(
@@ -120,50 +149,226 @@ class MoreRecordsOptionsFlow(OptionsFlow):
                     vol.Required("entity_id"): EntitySelector(
                         {"filter": {"domain": ["sensor", "binary_sensor"]}}
                     ),
-                    vol.Required("file"): FileSelector(
-                        {"accept":".csv,text/csv"}
+                    vol.Required("source", default="csv"): SelectSelector(
+                        {"options": [
+                            {"value": "csv", "label": "CSV"},
+                            {"value": "ccu_historian", "label": "CCU-Historian"},
+                        ], "mode": "dropdown"}
                     ),
                 }
             ),
             errors=errors,
         )
 
-    async def async_step_confirm(self, user_input: dict[str, Any] | None = None):
-        """Commit only after an explicit confirmation."""
+    async def async_step_csv(self, user_input: dict[str, Any] | None = None):
+        """Upload CSV, normalize rows, and display a preview."""
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            try:
+                rows = await self.hass.async_add_executor_job(
+                    self._load_uploaded_csv, user_input["file"],
+                    self.hass.config.time_zone,
+                )
+                await self._prepare(rows, "CSV")
+                return await self.async_step_confirm()
+            except (CsvImportError, ValidationError, RecorderImportError,
+                    OSError, ValueError) as err:
+                _LOGGER.warning("MoreRecords CSV rejected: %s", err)
+                errors["base"] = "invalid_csv"
+        return self.async_show_form(
+            step_id="csv",
+            data_schema=vol.Schema(
+                {vol.Required("file"): FileSelector({"accept": ".csv,text/csv"})}
+            ),
+            errors=errors,
+        )
+
+    async def async_step_historian_connect(
+        self, user_input: dict[str, Any] | None = None
+    ):
+        """Configure Historian address and read available datapoints."""
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            self._ccu_url = user_input["url"].strip()
+            self._ccu_api_key = (user_input.get("api_key") or "").strip()
+            try:
+                rpc_url(self._ccu_url, self._ccu_api_key)
+                client = HistorianClient(
+                    async_get_clientsession(self.hass),
+                    self._ccu_url,
+                    self._ccu_api_key,
+                )
+                self._points = await client.async_datapoints()
+                if not self._points:
+                    raise HistorianError("No datapoints available")
+                return await self.async_step_historian_search()
+            except HistorianError as err:
+                _LOGGER.warning("CCU-Historian connection failed: %s",
+                                type(err).__name__)
+                errors["base"] = "historian_connection"
+
+        saved = self.config_entry.options
+        return self.async_show_form(
+            step_id="historian_connect",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(
+                        "url", default=self._ccu_url or saved.get("ccu_url", "")
+                    ): str,
+                    vol.Optional(
+                        "api_key",
+                        default=self._ccu_api_key or saved.get("ccu_api_key", ""),
+                    ): str,
+                }
+            ),
+            errors=errors,
+        )
+
+    async def async_step_historian_search(
+        self, user_input: dict[str, Any] | None = None
+    ):
+        """Search by display name, parameter, interface or address."""
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            self._point_choices, total = search_points(
+                self._points, user_input.get("query", "")
+            )
+            if self._point_choices:
+                return await self.async_step_historian_point()
+            errors["base"] = "no_datapoints"
+        return self.async_show_form(
+            step_id="historian_search",
+            data_schema=vol.Schema(
+                {vol.Optional("query", default=""): str}
+            ),
+            errors=errors,
+        )
+
+    async def async_step_historian_point(
+        self, user_input: dict[str, Any] | None = None
+    ):
+        """Select a searched datapoint and the requested calendar date range."""
+        if not self._point_choices:
+            return await self.async_step_historian_search()
+
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            point = next(
+                (p for p in self._point_choices
+                 if str(p.idx) == user_input["point_id"]),
+                None,
+            )
+            if point is None:
+                errors["base"] = "invalid_point"
+            else:
+                try:
+                    state = self.hass.states.get(self._entity_id)
+                    dest_unit = str(
+                        state.attributes.get("unit_of_measurement") or ""
+                    ) if state else ""
+                    # Never silently import e.g. fraction-of-1 levels into
+                    # a percentage sensor or °F into a °C sensor.
+                    if point.unit and dest_unit and point.unit != dest_unit:
+                        errors["base"] = "unit_mismatch"
+                    else:
+                        start_ms, end_ms = date_range_ms(
+                            user_input["start_date"], user_input["end_date"],
+                            self.hass.config.time_zone,
+                        )
+                        client = HistorianClient(
+                            async_get_clientsession(self.hass),
+                            self._ccu_url,
+                            self._ccu_api_key,
+                        )
+                        rows = await client.async_history(
+                            point.idx, start_ms, end_ms
+                        )
+                        if not rows:
+                            errors["base"] = "historian_empty"
+                        else:
+                            await self._prepare(rows, f"CCU-Historian: {point.label}")
+                            return await self.async_step_confirm()
+                except (HistorianError, ValidationError,
+                        RecorderImportError, ValueError) as err:
+                    _LOGGER.warning("CCU-Historian data rejected: %s",
+                                    type(err).__name__)
+                    errors["base"] = (
+                        "no_new_data"
+                        if isinstance(err, RecorderImportError)
+                        and "overlap" in str(err)
+                        else "historian_data"
+                    )
+
+        today = datetime.now(timezone.utc).date().isoformat()
+        return self.async_show_form(
+            step_id="historian_point",
+            data_schema=vol.Schema(
+                {
+                    vol.Required("point_id"): SelectSelector(
+                        {
+                            "options": [
+                                {"value": str(p.idx), "label": p.label}
+                                for p in self._point_choices
+                            ],
+                            "mode": "dropdown",
+                        }
+                    ),
+                    vol.Required("start_date", default="2020-01-01"):
+                        DateSelector({}),
+                    vol.Required("end_date", default=today): DateSelector({}),
+                }
+            ),
+            errors=errors,
+        )
+
+    async def async_step_confirm(
+        self, user_input: dict[str, Any] | None = None
+    ):
+        """Make the explicit write, rechecking all overlapping rows at commit."""
         errors: dict[str, str] = {}
         if user_input is not None:
             if not user_input.get("confirm"):
                 errors["base"] = "confirmation_required"
             elif not self._entity_id or not self._rows:
                 return await self.async_step_init()
+            elif not self._target_valid(self._entity_id):
+                errors["base"] = "invalid_entity"
             else:
-                state = self.hass.states.get(self._entity_id)
-                if state is None:
-                    errors["base"] = "invalid_entity"
+                try:
+                    recorder = get_instance(self.hass)
+                    if recorder.auto_purge:
+                        raise RecorderImportError("Recorder auto purge is enabled")
+                    validate_rows(
+                        self.hass.states.get(self._entity_id),
+                        self._rows,
+                        datetime.now(timezone.utc).timestamp(),
+                    )
+                    outcome = await async_prepend_states(
+                        self.hass, self._entity_id, self._rows
+                    )
+                except Exception:
+                    _LOGGER.exception("MoreRecords Recorder import failed")
+                    errors["base"] = "import_failed"
                 else:
-                    try:
-                        validate_rows(
-                            state, self._rows, datetime.now(timezone.utc).timestamp()
-                        )
-                        count = await async_prepend_states(
-                            self.hass, self._entity_id, self._rows
-                        )
-                    except (ValidationError, RecorderImportError, Exception):
-                        _LOGGER.exception("MoreRecords CSV import failed")
-                        errors["base"] = "import_failed"
-                    else:
-                        return self.async_create_entry(
-                            data={
-                                "last_entity_id": self._entity_id,
-                                "last_import_count": count,
-                                "last_import_utc": datetime.now(
-                                    timezone.utc
-                                ).isoformat(),
-                            }
-                        )
+                    # Preserve connection details for subsequent one-shot imports.
+                    return self.async_create_entry(
+                        data={
+                            **self.config_entry.options,
+                            "ccu_url": self._ccu_url
+                            or self.config_entry.options.get("ccu_url", ""),
+                            "ccu_api_key": self._ccu_api_key
+                            or self.config_entry.options.get("ccu_api_key", ""),
+                            "last_entity_id": self._entity_id,
+                            "last_imported": outcome.inserted,
+                            "last_skipped": outcome.skipped,
+                            "last_import_utc": datetime.now(timezone.utc).isoformat(),
+                        }
+                    )
         return self.async_show_form(
             step_id="confirm",
-            data_schema=vol.Schema({vol.Required("confirm", default=False): bool}),
+            data_schema=vol.Schema(
+                {vol.Required("confirm", default=False): bool}
+            ),
             description_placeholders=self._preview,
             errors=errors,
         )

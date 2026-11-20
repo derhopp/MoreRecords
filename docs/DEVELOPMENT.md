@@ -3,17 +3,20 @@
 ## Scope
 
 - A single Home Assistant config entry enables a user-invoked CSV import options flow.
-- User selects an existing entity and uploads a two-column file.
+- User selects an existing entity and chooses a two-column CSV upload or CCU-Historian JSON-RPC source.
+- CCU-Historian endpoint URL, optional API key, searchable metadata by display name/parameter and user-selected date range are supported.
 - Only numeric sensors and binary sensors with existing SQLite Recorder history are supported.
 - Dry-run validation and preview precede explicit confirmation.
 - The destination's current Home Assistant state is never changed.
-- Imports prepend strictly before the earliest recorded state; no overlaps, replacements or gap filling.
+- The importer ignores any source rows whose timestamps are on or after the earliest existing HA state and prepends only the missing prefix; no replacements or gap filling within HA-covered time.
 - UI translations: English (default) and German.
 - HACS repository structure, tests and CI; no release or tag.
 
 ## Architecture
 
 - `csv_import.py`: CSV format, timestamp and DST parsing, ordering and duplicate detection.
+- `ccu_historian.py`: read-only datapoint listing, name/parameter searching, raw series fetching in bounded windows and value/time validation.
+- `merge_policy.py`: shared preview/write filtering for time-range overlaps.
 - `validation.py`: explicit entity/domain and value type checks.
 - `config_flow.py`: user setup + options flow, FileSelector and confirmation UI.
 - `recorder_import.py`: RecorderTask in the Recorder queue, with cutoff re-check in the transaction.
@@ -23,6 +26,8 @@
 
 - [ ] Run against a live Home Assistant SQLite Recorder, including a WAL-backed database.
 - [ ] Confirm a normal CSV produces visible full-resolution History points before existing data.
+- [ ] Verify the CCU-Historian JSON-RPC API with a live instance, including keyword-protected endpoints, names with umlauts, and the `getDataPoint` list response.
+- [ ] Confirm partially overlapping CSV and Historian ranges ignore only their Recorder-covered suffix; no existing rows are changed.
 - [ ] Confirm current entity state, device registry and attributes are untouched.
 - [ ] Reject overlaps, duplicate timestamps, out-of-range values, DST ambiguity, invalid numeric/binary states, unexpected CSV encodings and oversized uploads.
 - [ ] Test transaction rollback on injected SQL errors and stale preview cutoffs.
@@ -33,4 +38,4 @@
 
 ## Out of scope (initial version)
 
-External CCU-Historian API access, recurring imports, merging gaps, automatic unit conversion, textual sensors, non-SQLite databases, import undo, and automatic long-term statistics generation.
+Recurring imports, merging gaps, automatic unit conversion, textual sensors, non-SQLite databases, import undo, and automatic long-term statistics generation.

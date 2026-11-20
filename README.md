@@ -1,17 +1,20 @@
 # MoreRecords
 
-MoreRecords is a **Home Assistant custom integration (development preview)** for prepending historical CSV observations to an **existing** entity's Recorder history, without changing its current state.
+MoreRecords is a **Home Assistant custom integration (development preview)** for prepending historical CSV or CCU-Historian observations to an **existing** entity's Recorder history, without changing its current state.
 
 > **Experimental — no release has been published.** MoreRecords writes to Home Assistant's private Recorder schema. Make a full Home Assistant backup first. Compatibility is not guaranteed across Home Assistant upgrades. Use only in a disposable test instance until you have verified your version.
 
 ## Features
 
 - Select an existing numeric `sensor` or `binary_sensor` in Home Assistant.
+- Choose **CSV file** or **CCU-Historian** as the import source.
+- Connect to CCU-Historian via its configurable HTTP(S) web address, optionally with an API key. Search datapoints by **display name**, **parameter**, interface or device address, and select a local calendar date range.
 - Upload a two-column CSV from your computer using Home Assistant's FileSelector.
 - Parse ISO-8601/Unix timestamps and local European timestamps, respecting the Home Assistant time zone.
 - Validate value compatibility and reject ambiguous daylight-saving times, duplicate timestamps, overlapping history, non-finite numeric values, and unsupported entity types.
 - Show a row-count/time-range confirmation screen; no import occurs without explicit confirmation.
 - Prepend full-resolution states on the Recorder thread, within a SQLite transaction; leave current entity state unchanged.
+- **Ignore overlap**: any source timestamps already within the existing HA Recorder history range are skipped. Only source rows strictly before the first HA state are inserted, even if the timestamp itself is not present in HA.
 - English and German configuration flows follow Home Assistant's language selection.
 
 ## Requirements
@@ -56,23 +59,34 @@ Supported state values: finite numbers for numeric sensors, and `on/off`, `true/
 
 The initial version accepts at most 100,000 observations per file and rejects conflicting duplicate timestamps. Split larger exports into chronological pieces and import **oldest first**.
 
+## Import directly from CCU-Historian
+
+1. In **Settings → Devices & services → MoreRecords → Configure**, select a supported target entity and **CCU-Historian** as the source.
+2. Enter the Historian web address, for example `http://192.168.1.50:8082`. The importer uses the documented `/query/jsonrpc.gy` JSON-RPC endpoint. Optionally enter the `webServer.apiKeys` key (stored in HA integration options).
+3. Enter a search term matching all or part of the **data point display name or parameter**, e.g. `Schalter Küche Decke STATE`. The search also includes interface and physical address. You can search again by returning to the previous step; at most the first 100 matches are shown at once.
+4. Choose the matching datapoint ID and the start/end dates, then review the preview and explicitly confirm the import. Start/end dates refer to the Home Assistant local time zone, with both calendar dates included.
+
+MoreRecords calls CCU-Historian's `getDataPoint` (list metadata) and `getTimeSeriesRaw` (original timestamp/value observations). No PostgreSQL access is required; reads are batched in 31-day windows. Fetching is capped at **100,000 observations per operation**; select shorter date ranges for larger archives. Source and target units must match if both are reported; the importer does **not** automatically rescale values (for example `100%` vs `%`).
+
+CCU-Historian runs on the configured Home Assistant network. For API-key-protected installations, use HTTPS where possible because the Historian API key is sent as a URL query parameter over the connection. The integration never modifies CCU-Historian data.
+
 ## Import workflow
 
 1. Choose an entity and upload the CSV.
-2. MoreRecords validates the CSV and compares its newest timestamp with the first recorded state of the entity. **All CSV rows must be strictly older**.
-3. Review the entity, row count, CSV time range, and earliest existing HA timestamp.
+2. MoreRecords validates the CSV or CCU-Historian data and compares its timestamps with the first recorded state of the entity. **Only rows strictly older than the first HA state are eligible**. Other source rows are ignored as overlapping the existing HA Recorder time range.
+3. Review the entity, total source row count, eligible import count, ignored-overlap count, source time range, and earliest existing HA timestamp.
 4. Explicitly confirm. The internal Recorder task performs an atomic SQLite prepend. The wizard reports the row count on success.
 
-Repeating the same file is rejected as overlapping existing history. Existing Recorder rows are not overwritten. The importer does not create statistics or write into the current in-memory entity state.
+Repeating the same source import produces no new rows (already covered values are skipped; if all are covered, the import wizard declines to proceed). Existing Recorder rows are not overwritten. The importer does not create statistics or write into the current in-memory entity state.
 
 ## Limitations and safety
 
 - This is a **provisional implementation**, not yet validated in a live Home Assistant environment. The direct Recorder writer uses **private, version-sensitive APIs**. Do not use with production data until integration tests on your exact Home Assistant version pass.
-- CSV files and preview state are temporary and wizard-local. An uploaded file is deleted when processed.
+- CSV files, Historian search results, and preview state are temporary and wizard-local. An uploaded file is deleted when processed.
 - Historic attributes are inherited from the earliest existing Recorder row; this may misrepresent past units and device classes. Only use for entities whose semantics have stayed constant.
 - Binary sensor status mapping is conventional; source-specific enumerations are not inferred.
 - Full-resolution Recorder states are separate from long-term statistics. MoreRecords does not import or rebuild historical long-term statistics.
-- Prepending is intentionally limited to the time **before** the first recorded state. Gaps, overlaps, conflict resolution, and rollbacks of completed imports are not supported.
+- Prepending is intentionally limited to the time **before** the first recorded state. Source measurements within the existing HA history range are silently skipped, even when HA has no row at an exact source timestamp. Filling gaps within this existing range, overriding existing data and undoing completed imports are not supported.
 - An import runs synchronously on the Recorder queue. Very large CSV files may delay other recorded events. Keep imports small and inspect logs.
 - Recorder `auto_purge: false` prevents automatic cleanup of **all** entities, not just imported ones.
 

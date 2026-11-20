@@ -13,18 +13,49 @@
   "options": {
     "step": {
       "init": {
-        "title": "Import historical CSV data",
-        "description": "Choose an existing entity and a two-column CSV file with timestamp and value. The file is checked before import. No recorder data is modified at this step.",
+        "title": "Import historical data",
+        "description": "Select an existing Home Assistant entity and choose CSV upload or direct CCU-Historian import.",
         "data": {
           "entity_id": "Target entity",
-          "file": "CSV file"
+          "source": "Import source"
         }
       },
       "confirm": {
         "title": "Confirm historical import",
-        "description": "Target: {entity_id}\nRows: {count}\nCSV start (UTC): {first}\nCSV end (UTC): {last}\nEarliest existing HA state (UTC): {oldest}\n\nThe imported rows will be added before the existing states. A Home Assistant backup is strongly recommended. Do not confirm unless you have disabled recorder auto_purge.",
+        "description": "Target: {entity_id}\nSource: {source}\nSource rows: {total}\nNew historical rows: {importable}\nRows already covered by HA: {skipped}\nSource start (UTC): {first}\nSource end (UTC): {last}\nEarliest existing HA state (UTC): {oldest}\n\nExisting Recorder history is preserved. Only rows before the first existing state are imported. A verified Home Assistant backup is required; disable Recorder auto_purge to keep full-resolution history.",
         "data": {
-          "confirm": "I have a backup and want to import these rows"
+          "confirm": "I have a backup and want to import the missing rows"
+        }
+      },
+      "csv": {
+        "title": "Upload CSV file",
+        "description": "Select a two-column timestamp/value CSV. Only missing historical data before the first recorded HA state will be inserted.",
+        "data": {
+          "file": "CSV file"
+        }
+      },
+      "historian_connect": {
+        "title": "Connect to CCU-Historian",
+        "description": "Enter the CCU-Historian web address (including port). The API key is optional and is stored in the integration options.",
+        "data": {
+          "url": "Historian web address",
+          "api_key": "API key (optional)"
+        }
+      },
+      "historian_search": {
+        "title": "Search CCU-Historian datapoints",
+        "description": "Search by display name, parameter, interface or address. Leave blank to browse the first 100 entries. Continue to select from the matching results.",
+        "data": {
+          "query": "Name or parameter search"
+        }
+      },
+      "historian_point": {
+        "title": "Choose datapoint and time period",
+        "description": "Choose the datapoint from the filtered list, then select the source time range. The existing Home Assistant history is never overwritten. Choose another search query by going back.",
+        "data": {
+          "point_id": "CCU-Historian datapoint",
+          "start_date": "First day",
+          "end_date": "Last day"
         }
       }
     },
@@ -36,7 +67,14 @@
       "missing_history": "The selected entity has no existing recorder history.",
       "overlap": "CSV timestamps must all precede the earliest existing recorder state.",
       "confirmation_required": "You must explicitly confirm the import.",
-      "import_failed": "The import failed and was rolled back. Check the Home Assistant logs."
+      "import_failed": "The import failed and was rolled back. Check the Home Assistant logs.",
+      "historian_connection": "Could not connect to CCU-Historian or load datapoints; check the URL, port and API key.",
+      "no_datapoints": "No matching datapoints. Try a different search.",
+      "invalid_point": "The selected datapoint is no longer in the search results.",
+      "unit_mismatch": "CCU-Historian unit differs from the target entity unit. Automatic conversion is not supported.",
+      "historian_empty": "No historical readings found in this period.",
+      "historian_data": "Could not load or validate this datapoint's historical values. See the logs.",
+      "no_new_data": "All source rows are already covered by Home Assistant's Recorder history."
     }
   }
 }

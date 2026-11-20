@@ -13,18 +13,49 @@
   "options": {
     "step": {
       "init": {
-        "title": "Historische CSV-Daten importieren",
-        "description": "Wähle eine bestehende Entität und eine CSV-Datei mit Zeitstempel und Wert. Vor dem Import werden die Daten geprüft; dieser Schritt verändert den Recorder nicht.",
+        "title": "Historische Daten importieren",
+        "description": "Wähle eine bestehende Home-Assistant-Entität und CSV-Upload oder den direkten Import aus CCU-Historian.",
         "data": {
           "entity_id": "Zielentität",
-          "file": "CSV-Datei"
+          "source": "Datenquelle"
         }
       },
       "confirm": {
         "title": "Historischen Import bestätigen",
-        "description": "Ziel: {entity_id}\nZeilen: {count}\nCSV-Beginn (UTC): {first}\nCSV-Ende (UTC): {last}\nÄltester HA-Zustand (UTC): {oldest}\n\nDie Werte werden vor den bestehenden Zuständen eingefügt. Ein Home-Assistant-Backup wird dringend empfohlen. Bestätige nur, wenn recorder auto_purge deaktiviert ist.",
+        "description": "Ziel: {entity_id}\nQuelle: {source}\nQuellmesswerte: {total}\nNeue historische Werte: {importable}\nVon HA bereits abgedeckte Werte: {skipped}\nQuellbeginn (UTC): {first}\nQuellende (UTC): {last}\nÄltester HA-Eintrag (UTC): {oldest}\n\nDer bestehende Recorder-Verlauf bleibt erhalten. Importiert wird nur vor dem ersten vorhandenen Eintrag. Ein geprüftes Backup ist erforderlich; für dauerhaft vollständige Rohdaten Recorder auto_purge deaktivieren.",
         "data": {
-          "confirm": "Ich habe ein Backup und möchte diese Werte importieren"
+          "confirm": "Ich habe ein Backup und möchte die fehlenden Werte importieren"
+        }
+      },
+      "csv": {
+        "title": "CSV-Datei hochladen",
+        "description": "Wähle eine CSV-Datei mit den Spalten Zeitstempel und Wert. Nur fehlende historische Messwerte vor dem ersten HA-Eintrag werden eingefügt.",
+        "data": {
+          "file": "CSV-Datei"
+        }
+      },
+      "historian_connect": {
+        "title": "Mit CCU-Historian verbinden",
+        "description": "Gib die Web-Adresse einschließlich Port ein. Ein optionaler API-Schlüssel wird in den Integrationseinstellungen gespeichert.",
+        "data": {
+          "url": "Historian-Web-Adresse",
+          "api_key": "API-Schlüssel (optional)"
+        }
+      },
+      "historian_search": {
+        "title": "CCU-Historian-Datenpunkte suchen",
+        "description": "Suche nach Anzeigename, Parameter, Schnittstelle oder Adresse. Eine leere Suche zeigt die ersten 100 Datenpunkte. Danach kannst du aus den Treffern auswählen.",
+        "data": {
+          "query": "Suche nach Name oder Parameter"
+        }
+      },
+      "historian_point": {
+        "title": "Datenpunkt und Zeitraum wählen",
+        "description": "Wähle den Datenpunkt aus der Trefferliste und anschließend den Datenzeitraum. Vorhandene HA-Verläufe werden nie überschrieben. Über Zurück kannst du erneut suchen.",
+        "data": {
+          "point_id": "CCU-Historian-Datenpunkt",
+          "start_date": "Erster Tag",
+          "end_date": "Letzter Tag"
         }
       }
     },
@@ -36,7 +67,14 @@
       "missing_history": "Für die Entität ist noch kein Recorder-Verlauf vorhanden.",
       "overlap": "Alle CSV-Zeitstempel müssen vor dem ältesten Recorder-Zustand liegen.",
       "confirmation_required": "Du musst den Import ausdrücklich bestätigen.",
-      "import_failed": "Import fehlgeschlagen und zurückgerollt. Bitte Home-Assistant-Protokoll prüfen."
+      "import_failed": "Import fehlgeschlagen und zurückgerollt. Bitte Home-Assistant-Protokoll prüfen.",
+      "historian_connection": "CCU-Historian nicht erreichbar oder Datenpunkte konnten nicht geladen werden. URL, Port und API-Schlüssel prüfen.",
+      "no_datapoints": "Keine passenden Datenpunkte gefunden. Bitte andere Suche verwenden.",
+      "invalid_point": "Der ausgewählte Datenpunkt ist nicht mehr in der Trefferliste.",
+      "unit_mismatch": "Die CCU-Historian-Einheit unterscheidet sich von der Einheit der HA-Entität. Automatische Umrechnung wird nicht unterstützt.",
+      "historian_empty": "Keine Messwerte im gewählten Zeitraum vorhanden.",
+      "historian_data": "Die historischen Daten konnten nicht geladen oder validiert werden. Siehe Protokoll.",
+      "no_new_data": "Alle Quellmesswerte liegen bereits im vorhandenen HA-Recorder-Zeitraum."
     }
   }
 }

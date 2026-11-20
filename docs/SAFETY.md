@@ -8,7 +8,11 @@ MoreRecords writes private Home Assistant Recorder tables. Use only after a **fu
 2. Confirm there is enough disk space for the expanded SQLite database.
 3. Test with a disposable Home Assistant instance and a copied database before enabling on a production system.
 4. Import only values with the same unit and state semantics as the destination entity.
-5. Check that the oldest destination state is newer than every CSV timestamp; overlap is not supported.
+5. Preview the overlap report: the importer skips source measurements at or after the oldest destination Recorder state. No existing HA rows are overwritten.
+
+## External CCU-Historian connections
+
+The optional URL may point to a private network service; only administrators should use the integration. Do not connect it to untrusted servers. API keys are stored as Home Assistant integration options and may be sent as URL query parameters to the configured server. Use HTTPS whenever supported. The search and data download are read-only and bounded by request and row limits.
 
 ## Internal implementation risk
 
