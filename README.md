@@ -6,12 +6,12 @@ MoreRecords is a **Home Assistant custom integration (development preview)** for
 
 ## Features
 
-- Select an existing numeric `sensor` or `binary_sensor` in Home Assistant.
+- Select **any existing entity recorded by Home Assistant**, including `light`, `switch`, `input_boolean`, `binary_sensor`, `sensor`, `select`, `lock`, and others. Source values are checked against the target's domain and known state metadata.
 - Choose **CSV file** or **CCU-Historian** as the import source.
 - Connect to CCU-Historian via its configurable HTTP(S) web address, optionally with an API key. Search datapoints by **display name**, **parameter**, interface or device address, and select a local calendar date range.
 - Upload a two-column CSV from your computer using Home Assistant's FileSelector.
 - Parse ISO-8601/Unix timestamps and local European timestamps, respecting the Home Assistant time zone.
-- Validate value compatibility and reject ambiguous daylight-saving times, duplicate timestamps, overlapping history, non-finite numeric values, and unsupported entity types.
+- Validate source state compatibility and reject ambiguous daylight-saving times, duplicate timestamps, non-finite numeric values, and invalid on/off or selectable states.
 - Show a row-count/time-range confirmation screen; no import occurs without explicit confirmation.
 - Prepend full-resolution states on the Recorder thread, within a SQLite transaction; leave current entity state unchanged.
 - **Ignore overlap**: any source timestamps already within the existing HA Recorder history range are skipped. Only source rows strictly before the first HA state are inserted, even if the timestamp itself is not present in HA.
@@ -59,13 +59,13 @@ timestamp;value
 
 Supported timestamps: ISO-8601 with offset (recommended), ISO-8601 without offset, `DD.MM.YYYY HH:MM[:SS]`, Unix seconds (10 digits), and Unix milliseconds (13 digits). Naive times are interpreted using the configured HA time zone. Ambiguous/nonexistent DST local times are rejected; add a UTC offset to disambiguate. Delimiters: semicolon, comma or tab. Comma decimal values require semicolon or tab delimiters.
 
-Supported state values: finite numbers for numeric sensors, and `on/off`, `true/false` or `1/0` for binary sensors. Unsupported entities and textual sensors are rejected, rather than guessed. Values are assumed to use the target entity's existing unit; no unit conversion occurs.
+Supported state values depend on the target entity: `on/off`, `true/false`, or `1/0` for `light`, `switch`, `binary_sensor`, `input_boolean` and other binary-state domains; finite numeric values for numeric sensors, `number`, `counter`, `input_number`; known options for `select`, `input_select` and `climate`; bounded text states for other domains. `unknown` and `unavailable` are legitimate Home Assistant states. Values are assumed to use the target's existing unit; no unit conversion occurs.
 
 The initial version accepts at most 100,000 observations per file and rejects conflicting duplicate timestamps. When automatic Recorder purging is enabled, CSV rows older than its configured retention window are counted as skipped and never written. Split larger exports into chronological pieces and import **oldest first**.
 
 ## Import directly from CCU-Historian
 
-1. In **Settings → Devices & services → MoreRecords → Configure**, select a supported target entity and **CCU-Historian** as the source.
+1. In **Settings → Devices & services → MoreRecords → Configure**, select a recorded target entity (including `light`/`switch`) and **CCU-Historian** as the source.
 2. Enter the Historian web address, for example `http://192.168.1.50:8082`. The importer uses the documented `/query/jsonrpc.gy` JSON-RPC endpoint. Optionally enter the `webServer.apiKeys` key (stored in HA integration options).
 3. Enter a search term matching all or part of the **data point display name or parameter**, e.g. `Schalter Küche Decke STATE`. The search also includes interface and physical address. You can search again by returning to the previous step; at most the first 100 matches are shown at once.
 4. Choose the matching datapoint ID and the start/end dates, then review the preview and explicitly confirm the import. Start/end dates refer to the Home Assistant local time zone, with both calendar dates included.
@@ -83,12 +83,21 @@ CCU-Historian runs on the configured Home Assistant network. For API-key-protect
 
 Repeating the same source import produces no new rows (already covered values are skipped; if all are covered, the import wizard declines to proceed). Existing Recorder rows are not overwritten. The importer does not create statistics or write into the current in-memory entity state.
 
+## Switch and light states versus button press events
+
+MoreRecords can backfill historic **entity state transitions** such as `on`/`off` for `switch.kitchen_light` and `light.kitchen`. CCU-Historian Boolean values are normalized to these standard Home Assistant states. This is suitable for visualizing recorded switching history and for consumers that query the Recorder database.
+
+A physical Homematic button press (`PRESS_SHORT`, `PRESS_LONG`) is typically an **event**, not an `on`/`off` light or switch state. MoreRecords **does not replay historic events** or retroactively trigger Home Assistant automations. Do not map `PRESS_SHORT` to an `on` state or expect imported events to run automations. Home Assistant `event`/`button` entity *states* are timestamps and must be imported as valid ISO timestamps; the historical event payload/attributes are not reconstructed by a two-column import.
+
+A presence simulator such as LightAway benefits from imported history **only if it queries Recorder history**; if it listens exclusively to live events, a history import alone will not reproduce physical presses. Verify its behavior separately.
+
 ## Limitations and safety
 
 - This is a **provisional implementation**, not yet validated in a live Home Assistant environment. The direct Recorder writer uses **private, version-sensitive APIs**. Do not use with production data until integration tests on your exact Home Assistant version pass.
 - CSV files, Historian search results, and preview state are temporary and wizard-local. An uploaded file is deleted when processed.
 - Historic attributes are inherited from the earliest existing Recorder row; this may misrepresent past units and device classes. Only use for entities whose semantics have stayed constant.
-- Binary sensor status mapping is conventional; source-specific enumerations are not inferred.
+- Boolean state mapping (`true`/`false`, `1`/`0` to `on`/`off`) is applied only to canonical on/off domains; arbitrary Homematic button-press enumerations are never converted into light/switch states.
+- Generic textual states are supported but this does not guarantee complete semantics for every Home Assistant domain. For example, historical `light` brightness/color attributes and button event details cannot be reconstructed from only timestamps and state values.
 - Full-resolution Recorder states are separate from long-term statistics. MoreRecords does not import or rebuild historical long-term statistics.
 - Prepending is intentionally limited to the time **before** the first recorded state. Source measurements within the existing HA history range are silently skipped, even when HA has no row at an exact source timestamp. Filling gaps within this existing range, overriding existing data and undoing completed imports are not supported.
 - An import runs synchronously on the Recorder queue. Very large CSV files may delay other recorded events. Keep imports small and inspect logs.

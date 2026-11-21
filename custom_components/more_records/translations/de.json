@@ -14,7 +14,7 @@
     "step": {
       "init": {
         "title": "Historische Daten importieren",
-        "description": "Wähle eine bestehende Home-Assistant-Entität und CSV-Upload oder den direkten Import aus CCU-Historian.",
+        "description": "Wähle eine vorhandene, vom Recorder aufgezeichnete Entität (einschließlich Licht und Schalter) und anschließend CSV oder CCU-Historian.",
         "data": {
           "entity_id": "Zielentität",
           "source": "Datenquelle"
@@ -29,7 +29,7 @@
       },
       "csv": {
         "title": "CSV-Datei hochladen",
-        "description": "Lade eine CSV-Datei mit Zeitstempel und Wert hoch. MoreRecords überspringt bereits vom HA-Recorder abgedeckte Werte und Werte außerhalb der Aufbewahrungsfrist.",
+        "description": "CSV-Datei mit Zeitstempel und Wert hochladen. Licht- und Schalterzustände on/off werden unterstützt. Bestehende HA-Verläufe und Werte außerhalb der Aufbewahrung werden übersprungen.",
         "data": {
           "file": "CSV-Datei"
         }
@@ -60,7 +60,7 @@
       }
     },
     "error": {
-      "invalid_entity": "Wähle einen vorhandenen, aufgezeichneten numerischen Sensor oder Binärsensor.",
+      "invalid_entity": "Wähle eine vorhandene Entität, deren Zustände vom Home-Assistant-Recorder aufgezeichnet werden.",
       "sqlite_only": "Diese Version unterstützt nur SQLite als Recorder.",
       "purge_enabled": "Automatische Recorder-Bereinigung aktiv: Es werden nur Werte innerhalb von purge_keep_days übernommen.",
       "invalid_csv": "CSV ungültig oder Werte passen nicht zum Entitätstyp. Details stehen im Home-Assistant-Protokoll.",

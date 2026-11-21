@@ -89,13 +89,9 @@ class MoreRecordsOptionsFlow(OptionsFlow):
             return parse_csv(Path(path), time_zone)
 
     def _target_valid(self, entity_id: str) -> bool:
-        """Fail closed unless the destination is a recorded supported entity."""
+        """Allow any existing entity that the active Recorder records."""
         state = self.hass.states.get(entity_id)
-        if state is None:
-            return False
-        if entity_id.partition(".")[0] not in ("sensor", "binary_sensor"):
-            return False
-        return is_entity_recorded(self.hass, entity_id)
+        return state is not None and is_entity_recorded(self.hass, entity_id)
 
     async def _prepare(self, rows: list[HistoryRow], label: str) -> None:
         """Validate and preview; writes happen only in the confirm step."""
@@ -173,9 +169,7 @@ class MoreRecordsOptionsFlow(OptionsFlow):
             step_id="init",
             data_schema=vol.Schema(
                 {
-                    vol.Required("entity_id"): EntitySelector(
-                        {"filter": {"domain": ["sensor", "binary_sensor"]}}
-                    ),
+                    vol.Required("entity_id"): EntitySelector({}),
                     vol.Required("source", default="csv"): SelectSelector(
                         {"options": [
                             {"value": "csv", "label": "CSV"},

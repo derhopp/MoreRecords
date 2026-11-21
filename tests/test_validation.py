@@ -19,9 +19,9 @@ def test_numeric_sensor():
     assert validate_rows(entity("sensor.temperature", "20", unit_of_measurement="°C"), rows, NOW) == rows
 
 
-def test_non_numeric_sensor_rejected():
-    with pytest.raises(ValidationError, match="numeric"):
-        validate_rows(entity("sensor.words", "hello"), [HistoryRow(100, "hello")], NOW)
+def test_text_sensor_supported():
+    rows = [HistoryRow(100, "closed"), HistoryRow(200, "open")]
+    assert validate_rows(entity("sensor.words", "closed"), rows, NOW) == rows
 
 
 def test_nan_rejected():
@@ -34,7 +34,7 @@ def test_binary_state_normalized():
 
 
 def test_invalid_binary_state():
-    with pytest.raises(ValidationError, match="Invalid binary"):
+    with pytest.raises(ValidationError, match="on/off"):
         validate_rows(entity("binary_sensor.door", "on"), [HistoryRow(100, "maybe")], NOW)
 
 
@@ -43,6 +43,66 @@ def test_future_rejected():
         validate_rows(entity("sensor.temp", "4"), [HistoryRow(NOW, "1")], NOW)
 
 
-def test_unsupported_domain():
-    with pytest.raises(ValidationError, match="Only sensor"):
-        validate_rows(entity("switch.light", "on"), [HistoryRow(100, "on")], NOW)
+def test_switch_on_off():
+    rows = [HistoryRow(100, "1"), HistoryRow(200, "off"), HistoryRow(300, "TRUE")]
+    assert [r.value for r in validate_rows(entity("switch.kitchen", "off"), rows, NOW)] == [
+        "on", "off", "on"
+    ]
+
+
+def test_light_state_changes():
+    rows = [HistoryRow(100, "0"), HistoryRow(200, "on")]
+    assert [r.value for r in validate_rows(entity("light.kitchen", "off"), rows, NOW)] == [
+        "off", "on"
+    ]
+
+
+def test_light_rejects_brightness_as_state():
+    with pytest.raises(ValidationError, match="on/off"):
+        validate_rows(entity("light.kitchen", "off"), [HistoryRow(100, "67")], NOW)
+
+
+def test_switch_rejects_press_short_as_state():
+    with pytest.raises(ValidationError, match="on/off"):
+        validate_rows(entity("switch.kitchen", "off"), [HistoryRow(100, "PRESS_SHORT")], NOW)
+
+
+def test_input_boolean():
+    rows = [HistoryRow(100, "false"), HistoryRow(200, "true")]
+    assert [r.value for r in validate_rows(entity("input_boolean.away", "off"), rows, NOW)] == [
+        "off", "on"
+    ]
+
+
+def test_select_options_are_enforced():
+    ent = entity("select.mode", "auto", options=["auto", "eco"])
+    assert validate_rows(ent, [HistoryRow(100, "eco")], NOW)[0].value == "eco"
+    with pytest.raises(ValidationError, match="Unknown"):
+        validate_rows(ent, [HistoryRow(100, "turbo")], NOW)
+
+
+def test_unknown_domain_text_state():
+    rows = [HistoryRow(100, "locked"), HistoryRow(200, "unlocked")]
+    assert validate_rows(entity("lock.front_door", "locked"), rows, NOW) == rows
+
+
+def test_button_timestamp_state():
+    rows = [HistoryRow(100, "2023-01-01T12:00:00+00:00")]
+    assert validate_rows(entity("button.entrance", "2023-01-01T12:00:00+00:00"), rows, NOW) == rows
+    with pytest.raises(ValidationError, match="ISO timestamp"):
+        validate_rows(entity("button.entrance", "2023-01-01T12:00:00+00:00"), [HistoryRow(100, "PRESS_SHORT")], NOW)
+
+
+def test_unavailable_and_unknown_are_allowed():
+    rows = [HistoryRow(100, "unavailable"), HistoryRow(200, "unknown")]
+    assert validate_rows(entity("light.kitchen", "on"), rows, NOW) == rows
+
+
+def test_long_state_rejected():
+    with pytest.raises(ValidationError, match="255"):
+        validate_rows(entity("sensor.long", "test"), [HistoryRow(100, "x" * 256)], NOW)
+
+
+def test_non_finite_numeric_sensor_rejected_with_state_class():
+    with pytest.raises(ValidationError, match="NaN"):
+        validate_rows(entity("sensor.power", "unknown", state_class="measurement"), [HistoryRow(100, "inf")], NOW)

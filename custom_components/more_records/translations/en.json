@@ -14,7 +14,7 @@
     "step": {
       "init": {
         "title": "Import historical data",
-        "description": "Select an existing Home Assistant entity and choose CSV upload or direct CCU-Historian import.",
+        "description": "Select any existing entity recorded by Home Assistant (including lights and switches), then choose a CSV upload or direct CCU-Historian import.",
         "data": {
           "entity_id": "Target entity",
           "source": "Import source"
@@ -29,7 +29,7 @@
       },
       "csv": {
         "title": "Upload CSV file",
-        "description": "Upload a timestamp/value CSV. MoreRecords skips rows already covered by the HA Recorder and rows outside the configured retention interval.",
+        "description": "Upload a timestamp/value CSV. On/off states are supported for lights and switches. MoreRecords skips existing HA history and rows outside retention.",
         "data": {
           "file": "CSV file"
         }
@@ -60,7 +60,7 @@
       }
     },
     "error": {
-      "invalid_entity": "Select an existing, recorded numeric sensor or binary sensor.",
+      "invalid_entity": "Select an existing entity included in Home Assistant Recorder history.",
       "sqlite_only": "This version supports only the SQLite recorder.",
       "purge_enabled": "Automatic purge is enabled; only points inside the configured purge_keep_days window may be imported.",
       "invalid_csv": "The CSV is invalid or its values do not match the entity type. Check the Home Assistant logs for details.",
