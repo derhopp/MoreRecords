@@ -49,3 +49,7 @@ Recurring imports, merging gaps, automatic unit conversion, textual sensors, non
 ## CCU-Historian connection diagnostics
 
 The JSON-RPC `getDataPoint` request without parameters lists all archived datapoints. The response may be large; read the full HTTP stream in bounded chunks rather than using one `StreamReader.read(n)`. Surface redacted, actionable error detail in the wizard and Home Assistant logs. Tests must cover chunked responses, oversized payloads and HTTP errors. Check that the exact API works from the Home Assistant host or container, not only a browser on a separate computer.
+
+## CCU-Historian value validation diagnostics
+
+The `historian_point` step logs the full exception reason (bounded) with datapoint ID and target entity ID, and renders the reason using translated `description_placeholders`. Historian Boolean values sometimes arrive as `0.0`/`1.0`; these forms are mapped only for binary-state domains. Never coerce arbitrary numbers into on/off states. Tests assert both normalized cases and rejection of non-Boolean values. Validation does not write any historical states.

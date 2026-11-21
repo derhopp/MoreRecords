@@ -106,3 +106,27 @@ def test_long_state_rejected():
 def test_non_finite_numeric_sensor_rejected_with_state_class():
     with pytest.raises(ValidationError, match="NaN"):
         validate_rows(entity("sensor.power", "unknown", state_class="measurement"), [HistoryRow(100, "inf")], NOW)
+
+def test_ccu_historian_decimal_boolean_states():
+    """Historian can encode boolean samples as floating-point zero and one."""
+    rows = [HistoryRow(100, "0.0"), HistoryRow(200, "1.0")]
+    for domain in ("light", "switch", "binary_sensor", "input_boolean"):
+        result = validate_rows(entity(f"{domain}.kitchen", "off"), rows, NOW)
+        assert [state.value for state in result] == ["off", "on"]
+
+
+def test_decimal_boolean_rejects_non_boolean_number():
+    """Reject a dimmer level instead of interpreting it as a switch state."""
+    with pytest.raises(ValidationError, match="on/off"):
+        validate_rows(
+            entity("light.kitchen", "off"),
+            [HistoryRow(100, "50.0")],
+            NOW,
+        )
+
+
+def test_numeric_sensor_preserves_decimal_values():
+    """Numeric sensors must not have 0.0/1.0 rewritten to on/off."""
+    rows = [HistoryRow(100, "0.0"), HistoryRow(200, "1.0")]
+    result = validate_rows(entity("sensor.power", "1.5"), rows, NOW)
+    assert [state.value for state in result] == ["0.0", "1.0"]

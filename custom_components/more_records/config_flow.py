@@ -285,6 +285,7 @@ class MoreRecordsOptionsFlow(OptionsFlow):
             return await self.async_step_historian_search()
 
         errors: dict[str, str] = {}
+        diagnostic = "—"
         if user_input is not None:
             point = next(
                 (p for p in self._point_choices
@@ -343,8 +344,17 @@ class MoreRecordsOptionsFlow(OptionsFlow):
                     _LOGGER.info("CCU-Historian history already present: %s", err)
                     errors["base"] = "no_new_data"
                 except (HistorianError, ValidationError, ValueError) as err:
-                    _LOGGER.warning("CCU-Historian data rejected: %s",
-                                    type(err).__name__)
+                    # The exception type alone hides the actual problem
+                    # (e.g. on/off mismatch, future timestamp or bad unit).
+                    # Show a bounded diagnostic to the admin, with no API key
+                    # or complete source series in the log.
+                    diagnostic = f"{type(err).__name__}: {err}"[:400]
+                    _LOGGER.warning(
+                        "CCU-Historian datapoint %s rejected for %s: %s",
+                        point.idx,
+                        self._entity_id,
+                        diagnostic,
+                    )
                     errors["base"] = "historian_data"
 
         today = datetime.now(timezone.utc).date().isoformat()
@@ -367,6 +377,7 @@ class MoreRecordsOptionsFlow(OptionsFlow):
                 }
             ),
             errors=errors,
+            description_placeholders={"diagnostic": diagnostic},
         )
 
     async def async_step_confirm(

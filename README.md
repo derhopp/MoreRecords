@@ -59,7 +59,7 @@ timestamp;value
 
 Supported timestamps: ISO-8601 with offset (recommended), ISO-8601 without offset, `DD.MM.YYYY HH:MM[:SS]`, Unix seconds (10 digits), and Unix milliseconds (13 digits). Naive times are interpreted using the configured HA time zone. Ambiguous/nonexistent DST local times are rejected; add a UTC offset to disambiguate. Delimiters: semicolon, comma or tab. Comma decimal values require semicolon or tab delimiters.
 
-Supported state values depend on the target entity: `on/off`, `true/false`, or `1/0` for `light`, `switch`, `binary_sensor`, `input_boolean` and other binary-state domains; finite numeric values for numeric sensors, `number`, `counter`, `input_number`; known options for `select`, `input_select` and `climate`; bounded text states for other domains. `unknown` and `unavailable` are legitimate Home Assistant states. Values are assumed to use the target's existing unit; no unit conversion occurs.
+Supported state values depend on the target entity: `on/off`, `true/false`, `1/0`, or `1.0/0.0` for `light`, `switch`, `binary_sensor`, `input_boolean` and other binary-state domains; finite numeric values for numeric sensors, `number`, `counter`, `input_number`; known options for `select`, `input_select` and `climate`; bounded text states for other domains. `unknown` and `unavailable` are legitimate Home Assistant states. Values are assumed to use the target's existing unit; no unit conversion occurs.
 
 The initial version accepts at most 100,000 observations per file and rejects conflicting duplicate timestamps. When automatic Recorder purging is enabled, CSV rows older than its configured retention window are counted as skipped and never written. Split larger exports into chronological pieces and import **oldest first**.
 
@@ -71,6 +71,10 @@ The initial version accepts at most 100,000 observations per file and rejects co
 4. Choose the matching datapoint ID and the start/end dates, then review the preview and explicitly confirm the import. Start/end dates refer to the Home Assistant local time zone, with both calendar dates included.
 
 MoreRecords calls CCU-Historian's `getDataPoint` (list metadata) and `getTimeSeriesRaw` (original timestamp/value observations). No PostgreSQL access is required; reads are batched in 31-day windows. Fetching is capped at **100,000 observations per operation**; select shorter date ranges for larger archives. The fetch start is automatically clamped to the live Recorder retention cutoff when `auto_purge` is active, avoiding downloads of data that would immediately expire. Source and target units must match if both are reported; the importer does **not** automatically rescale values (for example `100%` vs `%`).
+
+### Troubleshooting CCU-Historian value validation
+
+When CCU-Historian datapoints and raw samples load successfully but an import stops with `ValidationError`, the datapoint's values may not match the target entity's expected state format. The import wizard now displays the actual rejection reason next to the datapoint/time selection, and Home Assistant logs the datapoint ID, target entity ID and error. For Boolean on/off entities (`light`, `switch`, `binary_sensor`, etc.), CCU-Historian's `0.0` and `1.0` numeric representations are normalized to Home Assistant `off` and `on` in addition to `0`, `1`, `false`, `true`, `off`, and `on`. Other numbers such as `50.0` are intentionally **not** interpreted as Boolean states. No Recorder data is written when validation fails.
 
 ### Troubleshooting CCU-Historian connectivity
 

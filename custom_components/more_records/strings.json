@@ -51,7 +51,7 @@
       },
       "historian_point": {
         "title": "Choose datapoint and time period",
-        "description": "Select a datapoint and a time range. With auto_purge enabled, MoreRecords fetches only the portion within the configured retention window. Existing HA history is never overwritten.",
+        "description": "Select a datapoint and a time range. With auto_purge enabled, MoreRecords fetches only the portion within the configured retention window. Existing HA history is never overwritten.\n\nLast data validation error: {diagnostic}",
         "data": {
           "point_id": "CCU-Historian datapoint",
           "start_date": "First day",

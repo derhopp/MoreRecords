@@ -51,7 +51,7 @@
       },
       "historian_point": {
         "title": "Datenpunkt und Zeitraum wählen",
-        "description": "Wähle Datenpunkt und Zeitraum. Bei aktiviertem auto_purge ruft MoreRecords nur Werte innerhalb der eingestellten Aufbewahrungsfrist ab. Bestehende HA-Verläufe werden nicht überschrieben.",
+        "description": "Wähle Datenpunkt und Zeitraum. Bei aktiviertem auto_purge ruft MoreRecords nur Werte innerhalb der eingestellten Aufbewahrungsfrist ab. Bestehende HA-Verläufe werden nicht überschrieben.\n\nLetzter Datenprüfungsfehler: {diagnostic}",
         "data": {
           "point_id": "CCU-Historian-Datenpunkt",
           "start_date": "Erster Tag",

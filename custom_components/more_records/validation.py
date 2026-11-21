@@ -28,6 +28,7 @@ _BOOLEAN_VALUES = {
     "on": "on", "off": "off",
     "true": "on", "false": "off",
     "1": "on", "0": "off",
+    "1.0": "on", "0.0": "off",
 }
 # Numeric-only domains; sensors may be numeric *or* textual.
 _NUMERIC_DOMAINS = frozenset({"counter", "input_number", "number"})
@@ -90,7 +91,7 @@ def validate_rows(entity: Any, rows: list[HistoryRow], now: float) -> list[Histo
     """Validate recorded states for an existing entity, without domain limits.
 
     - Light, switch and other binary domains accept canonical on/off states,
-      including conventional 1/0 and true/false representations.
+      including conventional 1/0, 1.0/0.0 and true/false representations.
     - Numeric domains and numeric sensors require finite numeric values.
     - Select/input_select/climate require values listed in live entity options.
     - Other entity domains accept bounded nonempty textual state values; this
