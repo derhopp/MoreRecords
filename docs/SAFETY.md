@@ -10,6 +10,10 @@ MoreRecords writes private Home Assistant Recorder tables. Use only after a **fu
 4. Import only values with the same unit and state semantics as the destination entity. On/off states for `light` and `switch` are valid; physical `PRESS_SHORT`/`PRESS_LONG` event values are **not** equivalent to `on`/`off`.
 5. Preview the overlap report: the importer skips source measurements at or after the oldest destination Recorder state. No existing HA rows are overwritten.
 
+## Recorder CSV exports
+
+CSV exports are read-only and delivered via a single-use ten-minute signed URL through Home Assistant. A downloaded CSV may reveal private activity history: treat it as sensitive. No `/local` file is written. The exporter cannot reconstruct old Recorder rows already deleted by purging, and it caps one file at 100,000 rows. Export is based on internal Recorder SQLAlchemy models and needs live-version verification.
+
 ## External CCU-Historian connections
 
 The optional URL may point to a private network service; only administrators should use the integration. Do not connect it to untrusted servers. API keys are stored as Home Assistant integration options and may be sent as URL query parameters to the configured server. Use HTTPS whenever supported. The search and data download are read-only and bounded by request and row limits.

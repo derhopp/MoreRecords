@@ -1,10 +1,12 @@
 # MoreRecords
 
-MoreRecords is a **Home Assistant custom integration (development preview)** for prepending historical CSV or CCU-Historian observations to an **existing** entity's Recorder history, without changing its current state.
+MoreRecords is a **Home Assistant custom integration (development preview)** for importing historical CSV or CCU-Historian observations and **exporting Recorder states to CSV** to an **existing** entity's Recorder history, without changing its current state.
 
 > **Experimental — no release has been published.** MoreRecords writes to Home Assistant's private Recorder schema. Make a full Home Assistant backup first. Compatibility is not guaranteed across Home Assistant upgrades. Use only in a disposable test instance until you have verified your version.
 
 ## Features
+
+- Export raw state history for any existing recorded entity to an on-demand CSV file, with selectable start and end date/time.
 
 - Select **any existing entity recorded by Home Assistant**, including `light`, `switch`, `input_boolean`, `binary_sensor`, `sensor`, `select`, `lock`, and others. Source values are checked against the target's domain and known state metadata.
 - Choose **CSV file** or **CCU-Historian** as the import source.
@@ -43,9 +45,22 @@ MoreRecords is a **Home Assistant custom integration (development preview)** for
 3. Install MoreRecords from its custom repository. **Development only:** no tagged release exists; installation from the default branch depends on the HACS version and available development-version options.
 4. Restart Home Assistant.
 5. Go to **Settings → Devices & services → Add integration** and search for **MoreRecords**.
-6. Open the integration's **Configure** action to begin an import. There is no separate dashboard panel.
+6. Open the integration's **Configure** action and choose **Import** or **Export CSV**. There is no separate dashboard panel.
 
 For manual installation, copy `custom_components/more_records/` into your HA `config/custom_components/` and restart.
+
+## Export raw Home Assistant Recorder states to CSV
+
+1. Open **Settings → Devices & services → MoreRecords → Configure**.
+2. Choose **Export CSV**, select the entity (`light`, `switch`, `sensor` etc.) and a start/end date and time.
+3. Preview the raw row count and timestamps; confirm to generate a single-use download link.
+4. Click **Download CSV file**. The link expires after 10 minutes and can be used only once. A new export is required to retrieve the file again.
+
+The exported UTF-8, semicolon-delimited file has exactly two columns: `timestamp;value`. Timestamps are UTC ISO-8601 with microsecond formatting. Rows are sorted by stored Recorder timestamp, then internal state ID, and repeated identical states are **not** dropped. Values are escaped according to standard CSV rules. The selected period uses **[start, end)**; timestamps on the start are included and timestamps on the end are excluded. Date/time entries without timezone offsets are interpreted in the configured HA time zone, rejecting ambiguous or nonexistent DST timestamps.
+
+Exports use actual Recorder state rows, **not** long-term statistics, history graph smoothing, events, or inferred gaps. Purged rows are unavailable. The exporter is read-only and limits each file to **100,000 rows**; shorten the time interval for larger exports. The file is delivered through a signed, time-limited, authenticated Home Assistant endpoint; no publicly accessible `/local` file is generated. Raw states stored as NULL appear as empty cells. A CSV reimport may require cleaning empty values or duplicate exact timestamps.
+
+The export uses internal SQLAlchemy Recorder models and must be verified against the installed HA Core version. Live frontend/download integration testing is still required before production use.
 
 ## CSV format
 

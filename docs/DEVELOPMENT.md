@@ -2,6 +2,8 @@
 
 ## Scope
 
+- Users can export raw stored states of any existing recorded entity via a dedicated date/time selection and preview, receiving an authenticated single-use CSV link.
+
 - A single Home Assistant config entry enables a user-invoked CSV import options flow.
 - User selects an existing entity and chooses a two-column CSV upload or CCU-Historian JSON-RPC source.
 - CCU-Historian endpoint URL, optional API key, searchable metadata by display name/parameter and user-selected date range are supported.
@@ -16,6 +18,10 @@
 
 ## Architecture
 
+- `recorder_export.py`: read-only raw Recorder SQL queries, row-count preview and 100,000-row limit.
+- `export_csv.py`: UTC range parsing, precision-preserving CSV formatting, and in-memory one-use download tickets.
+- `export_view.py`: authenticated signed download endpoint and no publicly readable file.
+
 - `csv_import.py`: CSV format, timestamp and DST parsing, ordering and duplicate detection.
 - `ccu_historian.py`: read-only datapoint listing, name/parameter searching, raw series fetching in bounded windows and value/time validation.
 - `merge_policy.py`: shared preview/write filtering for time-range overlaps and Recorder auto-purge retention boundaries.
@@ -25,6 +31,10 @@
 - `translations/`: en/de translations, mirrored from `strings.json`.
 
 ## Acceptance criteria before first release
+
+- [ ] Verify export UI and clickable signed download links under German/English HA frontends.
+- [ ] Test exporting light/switch/sensor raw states with repeated values, timezone/DST boundaries and purged history.
+- [ ] Test signed URL expiration, one-time-use behavior, CSV escaping and oversized exports.
 
 - [ ] Run against a live Home Assistant SQLite Recorder, including a WAL-backed database.
 - [ ] Confirm a normal CSV produces visible full-resolution History points before existing data.

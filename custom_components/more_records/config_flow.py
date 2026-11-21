@@ -18,6 +18,7 @@ from homeassistant.core import callback
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.selector import (
     DateSelector,
+    DateTimeSelector,
     EntitySelector,
     FileSelector,
     SelectSelector,
@@ -33,6 +34,9 @@ from .ccu_historian import (
 )
 from .const import DOMAIN
 from .csv_import import CsvImportError, HistoryRow, parse_csv
+from .export_csv import ExportError, ExportTooLarge, parse_export_window
+from .export_view import signed_export_url
+from .recorder_export import async_export_preview
 from .merge_policy import ImportPlan, plan_prefix, retention_boundary
 from .recorder_import import (
     RecorderImportError,
@@ -75,6 +79,11 @@ class MoreRecordsOptionsFlow(OptionsFlow):
         """The source data are held only for this options-flow session."""
         self._entity_id: str | None = None
         self._source = "csv"
+        self._operation = "import"
+        self._export_entity: str | None = None
+        self._export_start: float | None = None
+        self._export_end: float | None = None
+        self._export_preview: dict[str, str] = {}
         self._rows: list[HistoryRow] = []
         self._plan: ImportPlan | None = None
         self._preview: dict[str, str] = {}
@@ -149,7 +158,31 @@ class MoreRecordsOptionsFlow(OptionsFlow):
         }
 
     async def async_step_init(self, user_input: dict[str, Any] | None = None):
-        """Select a target entity and an import source."""
+        """Choose import or export without limiting entity domains."""
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            self._operation = user_input["operation"]
+            if self._operation == "export":
+                return await self.async_step_export()
+            return await self.async_step_import()
+
+        return self.async_show_form(
+            step_id="init",
+            data_schema=vol.Schema(
+                {
+                    vol.Required("operation", default="import"): SelectSelector(
+                        {"options": [
+                            {"value": "import", "label": "Import"},
+                            {"value": "export", "label": "Export CSV"},
+                        ], "mode": "dropdown"}
+                    )
+                }
+            ),
+            errors=errors,
+        )
+
+    async def async_step_import(self, user_input: dict[str, Any] | None = None):
+        """Choose destination and CSV or CCU-Historian import source."""
         errors: dict[str, str] = {}
         if user_input is not None:
             entity_id = user_input["entity_id"]
@@ -166,7 +199,7 @@ class MoreRecordsOptionsFlow(OptionsFlow):
                 return await self.async_step_historian_connect()
 
         return self.async_show_form(
-            step_id="init",
+            step_id="import",
             data_schema=vol.Schema(
                 {
                     vol.Required("entity_id"): EntitySelector({}),
@@ -180,6 +213,112 @@ class MoreRecordsOptionsFlow(OptionsFlow):
             ),
             errors=errors,
         )
+
+    async def async_step_export(self, user_input: dict[str, Any] | None = None):
+        """Read and preview raw states in a selected timestamp interval."""
+        errors: dict[str, str] = {}
+        diagnostic = "—"
+        if user_input is not None:
+            entity_id = user_input["entity_id"]
+            if not self._target_valid(entity_id):
+                errors["base"] = "invalid_entity"
+            else:
+                try:
+                    start_ts, end_ts = parse_export_window(
+                        user_input["start_time"], user_input["end_time"],
+                        self.hass.config.time_zone,
+                    )
+                    summary = await async_export_preview(
+                        self.hass, entity_id, start_ts, end_ts
+                    )
+                    self._export_entity = entity_id
+                    self._export_start = start_ts
+                    self._export_end = end_ts
+                    self._export_preview = {
+                        "entity_id": entity_id,
+                        "count": str(summary.count),
+                        "start": datetime.fromtimestamp(
+                            start_ts, timezone.utc
+                        ).isoformat(),
+                        "end": datetime.fromtimestamp(
+                            end_ts, timezone.utc
+                        ).isoformat(),
+                        "first": datetime.fromtimestamp(
+                            summary.first_ts, timezone.utc
+                        ).isoformat(),
+                        "last": datetime.fromtimestamp(
+                            summary.last_ts, timezone.utc
+                        ).isoformat(),
+                    }
+                    return await self.async_step_export_confirm()
+                except ExportTooLarge as err:
+                    diagnostic = str(err)[:300]
+                    errors["base"] = "export_too_large"
+                except ExportError as err:
+                    diagnostic = str(err)[:300]
+                    errors["base"] = (
+                        "export_empty" if "No stored" in str(err)
+                        else "export_invalid"
+                    )
+                except Exception:
+                    _LOGGER.exception("Recorder export preview failed")
+                    errors["base"] = "export_failed"
+        return self.async_show_form(
+            step_id="export",
+            data_schema=vol.Schema(
+                {
+                    vol.Required("entity_id"): EntitySelector({}),
+                    vol.Required("start_time"): DateTimeSelector({}),
+                    vol.Required("end_time"): DateTimeSelector({}),
+                }
+            ),
+            errors=errors,
+            description_placeholders={"diagnostic": diagnostic},
+        )
+
+    async def async_step_export_confirm(
+        self, user_input: dict[str, Any] | None = None
+    ):
+        """Issue a short-lived download link after confirmation."""
+        if not self._export_entity or self._export_start is None or self._export_end is None:
+            return await self.async_step_export()
+        if user_input is not None:
+            if not user_input.get("confirm"):
+                return self.async_show_form(
+                    step_id="export_confirm",
+                    data_schema=vol.Schema(
+                        {vol.Required("confirm", default=False): bool}
+                    ),
+                    errors={"base": "confirmation_required"},
+                    description_placeholders=self._export_preview,
+                )
+            # The download endpoint re-reads the Recorder range, so no
+            # potentially sensitive CSV is stored in the config entry.
+            url = signed_export_url(
+                self.hass, self.config_entry.entry_id, self._export_entity,
+                self._export_start, self._export_end,
+            )
+            return self.async_show_form(
+                step_id="export_download",
+                data_schema=vol.Schema({}),
+                description_placeholders={
+                    **self._export_preview,
+                    "download_url": url,
+                },
+            )
+        return self.async_show_form(
+            step_id="export_confirm",
+            data_schema=vol.Schema(
+                {vol.Required("confirm", default=False): bool}
+            ),
+            description_placeholders=self._export_preview,
+        )
+
+    async def async_step_export_download(self, user_input: dict[str, Any] | None = None):
+        """Finish the wizard after the user has used the download link."""
+        if user_input is not None:
+            return self.async_create_entry(data=dict(self.config_entry.options))
+        return await self.async_step_export()
 
     async def async_step_csv(self, user_input: dict[str, Any] | None = None):
         """Upload CSV, normalize rows, and display a preview."""

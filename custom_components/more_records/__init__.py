@@ -1,11 +1,17 @@
-"""MoreRecords: one-shot historical CSV prepend for existing entities."""
+"""MoreRecords: one-time Recorder history import and CSV export."""
 
 
 async def async_setup_entry(hass, entry) -> bool:
-    """Enable the import tool; no entities or background polling are created."""
+    """Register the authenticated CSV export endpoint."""
+    from .export_view import register_export_view
+
+    register_export_view(hass)
     return True
 
 
 async def async_unload_entry(hass, entry) -> bool:
-    """Unload the import tool."""
+    """Revoke outstanding export URLs when the integration unloads."""
+    from .export_view import get_export_store
+
+    get_export_store(hass).clear_entry(entry.entry_id)
     return True

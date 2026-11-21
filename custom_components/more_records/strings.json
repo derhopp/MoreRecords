@@ -3,7 +3,7 @@
     "step": {
       "user": {
         "title": "Set up MoreRecords",
-        "description": "Enable the historical CSV importer. Use Configure to import a CSV file into an existing entity."
+        "description": "Enable historical imports and export of Home Assistant Recorder states."
       }
     },
     "abort": {
@@ -13,11 +13,10 @@
   "options": {
     "step": {
       "init": {
-        "title": "Import historical data",
-        "description": "Select any existing entity recorded by Home Assistant (including lights and switches), then choose a CSV upload or direct CCU-Historian import.",
+        "title": "MoreRecords – import or export",
+        "description": "Choose whether to import historical data or export existing Recorder history as a CSV file.",
         "data": {
-          "entity_id": "Target entity",
-          "source": "Import source"
+          "operation": "Operation"
         }
       },
       "confirm": {
@@ -57,6 +56,34 @@
           "start_date": "First day",
           "end_date": "Last day"
         }
+      },
+      "import": {
+        "title": "Import historical data",
+        "description": "Select any recorded HA entity and choose CSV or CCU-Historian.",
+        "data": {
+          "entity_id": "Target entity",
+          "source": "Import source"
+        }
+      },
+      "export": {
+        "title": "Export Recorder states",
+        "description": "Choose entity, start and end date/time. Times without UTC offsets use Home Assistant timezone. Start included, end excluded. Last diagnostic: {diagnostic}",
+        "data": {
+          "entity_id": "Recorded entity",
+          "start_time": "Start date and time",
+          "end_time": "End date and time"
+        }
+      },
+      "export_confirm": {
+        "title": "Confirm CSV export",
+        "description": "Entity: {entity_id}\nRecorder rows: {count}\nStart (UTC): {start}\nEnd (UTC, exclusive): {end}\nFirst stored row: {first}\nLast stored row: {last}\n\nEvery raw state row will be included without changing the database. Confirm to create a single-use ten-minute download link.",
+        "data": {
+          "confirm": "Generate CSV download link"
+        }
+      },
+      "export_download": {
+        "title": "Download CSV",
+        "description": "CSV export for **{entity_id}** ({count} raw rows):\n\n**[Download CSV file]({download_url})**\n\nThe link is valid for ten minutes and can be used only once. Click Submit after downloading to finish."
       }
     },
     "error": {
@@ -75,7 +102,11 @@
       "historian_empty": "No historical readings found in this period.",
       "historian_data": "Could not load or validate this datapoint's historical values. See the logs.",
       "no_new_data": "All source rows are already covered by Home Assistant's Recorder history.",
-      "retention_empty": "No historical source data are eligible within the active Recorder retention interval. Nothing was imported."
+      "retention_empty": "No historical source data are eligible within the active Recorder retention interval. Nothing was imported.",
+      "export_invalid": "Invalid date/time interval. Review the diagnostic.",
+      "export_empty": "No Recorder states in the selected range.",
+      "export_too_large": "More than 100,000 rows; choose a shorter interval.",
+      "export_failed": "Could not read Recorder data. See the logs."
     }
   }
 }

@@ -113,8 +113,14 @@ def parse_csv(path: Path, timezone_name: str) -> list[HistoryRow]:
                 timestamp = parse_timestamp(timestamp_raw, timezone_name)
                 if not math.isfinite(timestamp) or timestamp <= 0:
                     raise CsvImportError(f"Line {line_number}: invalid timestamp")
+                # Only normalize a *numeric* decimal comma. A textual
+                # Recorder state such as "Hello, world" must survive a
+                # semicolon-separated export/import round trip unchanged.
                 value = (
-                    value_raw.replace(",", ".") if delimiter != "," else value_raw
+                    value_raw.replace(",", ".")
+                    if delimiter != ","
+                    and re.fullmatch(r"[+-]?(?:\\d+(?:,\\d*)?|,\\d+)", value_raw)
+                    else value_raw
                 )
                 rows.append(HistoryRow(timestamp, value))
     except (UnicodeError, csv.Error) as err:

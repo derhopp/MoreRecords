@@ -3,7 +3,7 @@
     "step": {
       "user": {
         "title": "MoreRecords einrichten",
-        "description": "Aktiviere den CSV-Historienimport. Über Konfigurieren kannst du eine CSV-Datei für eine bestehende Entität importieren."
+        "description": "Historische Daten importieren und Home-Assistant-Recorder-Zustände exportieren."
       }
     },
     "abort": {
@@ -13,11 +13,10 @@
   "options": {
     "step": {
       "init": {
-        "title": "Historische Daten importieren",
-        "description": "Wähle eine vorhandene, vom Recorder aufgezeichnete Entität (einschließlich Licht und Schalter) und anschließend CSV oder CCU-Historian.",
+        "title": "MoreRecords – Import oder Export",
+        "description": "Historische Daten importieren oder vorhandenen Recorder-Verlauf als CSV exportieren.",
         "data": {
-          "entity_id": "Zielentität",
-          "source": "Datenquelle"
+          "operation": "Aktion"
         }
       },
       "confirm": {
@@ -57,6 +56,34 @@
           "start_date": "Erster Tag",
           "end_date": "Letzter Tag"
         }
+      },
+      "import": {
+        "title": "Historische Daten importieren",
+        "description": "Wähle eine aufgezeichnete HA-Entität und CSV oder CCU-Historian.",
+        "data": {
+          "entity_id": "Zielentität",
+          "source": "Datenquelle"
+        }
+      },
+      "export": {
+        "title": "Recorder-Zustände exportieren",
+        "description": "Entität, Start- und Enddatum mit Uhrzeit auswählen. Zeiten ohne UTC-Offset gelten in der HA-Zeitzone. Start eingeschlossen, Ende ausgeschlossen. Letzte Diagnose: {diagnostic}",
+        "data": {
+          "entity_id": "Aufgezeichnete Entität",
+          "start_time": "Startdatum und -uhrzeit",
+          "end_time": "Enddatum und -uhrzeit"
+        }
+      },
+      "export_confirm": {
+        "title": "CSV-Export bestätigen",
+        "description": "Entität: {entity_id}\nRecorder-Zeilen: {count}\nStart (UTC): {start}\nEnde (UTC, ausgeschlossen): {end}\nErster gespeicherter Wert: {first}\nLetzter gespeicherter Wert: {last}\n\nAlle Recorder-Rohzustände werden ausgegeben, ohne die Datenbank zu verändern. Bestätigung erzeugt einen einmalig nutzbaren Download-Link für zehn Minuten.",
+        "data": {
+          "confirm": "CSV-Download-Link erzeugen"
+        }
+      },
+      "export_download": {
+        "title": "CSV herunterladen",
+        "description": "CSV-Export für **{entity_id}** ({count} Rohzustände):\n\n**[CSV-Datei herunterladen]({download_url})**\n\nDer Link ist zehn Minuten gültig und nur einmal verwendbar. Nach dem Herunterladen auf Senden klicken."
       }
     },
     "error": {
@@ -75,7 +102,11 @@
       "historian_empty": "Keine Messwerte im gewählten Zeitraum vorhanden.",
       "historian_data": "Die historischen Daten konnten nicht geladen oder validiert werden. Siehe Protokoll.",
       "no_new_data": "Alle Quellmesswerte liegen bereits im vorhandenen HA-Recorder-Zeitraum.",
-      "retention_empty": "Innerhalb der aktuellen Recorder-Aufbewahrungsfrist sind keine älteren Quellwerte importierbar. Es wurde nichts importiert."
+      "retention_empty": "Innerhalb der aktuellen Recorder-Aufbewahrungsfrist sind keine älteren Quellwerte importierbar. Es wurde nichts importiert.",
+      "export_invalid": "Ungültiger Zeitraum. Bitte Diagnose prüfen.",
+      "export_empty": "Keine Recorder-Zustände im ausgewählten Zeitraum.",
+      "export_too_large": "Mehr als 100.000 Zeilen; bitte Zeitraum verkürzen.",
+      "export_failed": "Recorder-Daten konnten nicht gelesen werden. Siehe Protokoll."
     }
   }
 }
