@@ -119,7 +119,7 @@ def parse_csv(path: Path, timezone_name: str) -> list[HistoryRow]:
                 value = (
                     value_raw.replace(",", ".")
                     if delimiter != ","
-                    and re.fullmatch(r"[+-]?(?:\\d+(?:,\\d*)?|,\\d+)", value_raw)
+                    and re.fullmatch(r"[+-]?(?:\d+(?:,\d*)?|,\d+)", value_raw)
                     else value_raw
                 )
                 rows.append(HistoryRow(timestamp, value))
