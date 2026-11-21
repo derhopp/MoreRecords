@@ -22,14 +22,14 @@
       },
       "confirm": {
         "title": "Confirm historical import",
-        "description": "Target: {entity_id}\nSource: {source}\nSource rows: {total}\nNew historical rows: {importable}\nRows already covered by HA: {skipped}\nSource start (UTC): {first}\nSource end (UTC): {last}\nEarliest existing HA state (UTC): {oldest}\n\nExisting Recorder history is preserved. Only rows before the first existing state are imported. A verified Home Assistant backup is required; disable Recorder auto_purge to keep full-resolution history.",
+        "description": "Target: {entity_id}\nSource: {source}\nSource rows: {total}\nNew historical rows: {importable}\nSkipped (existing HA history): {skipped_overlap}\nSkipped (outside Recorder retention): {skipped_retention}\nRecorder configuration: {retention}\nRetention cutoff (UTC): {purge_before}\nSource start (UTC): {first}\nSource end (UTC): {last}\nEarliest existing HA state (UTC): {oldest}\n\nOnly source data within the current Recorder retention window and before the first existing HA state will be imported. If automatic purging is disabled, no retention cutoff applies. Older data will not be kept with auto_purge enabled. Verify your backup before confirming.",
         "data": {
           "confirm": "I have a backup and want to import the missing rows"
         }
       },
       "csv": {
         "title": "Upload CSV file",
-        "description": "Select a two-column timestamp/value CSV. Only missing historical data before the first recorded HA state will be inserted.",
+        "description": "Upload a timestamp/value CSV. MoreRecords skips rows already covered by the HA Recorder and rows outside the configured retention interval.",
         "data": {
           "file": "CSV file"
         }
@@ -51,7 +51,7 @@
       },
       "historian_point": {
         "title": "Choose datapoint and time period",
-        "description": "Choose the datapoint from the filtered list, then select the source time range. The existing Home Assistant history is never overwritten. Choose another search query by going back.",
+        "description": "Select a datapoint and a time range. With auto_purge enabled, MoreRecords fetches only the portion within the configured retention window. Existing HA history is never overwritten.",
         "data": {
           "point_id": "CCU-Historian datapoint",
           "start_date": "First day",
@@ -62,7 +62,7 @@
     "error": {
       "invalid_entity": "Select an existing, recorded numeric sensor or binary sensor.",
       "sqlite_only": "This version supports only the SQLite recorder.",
-      "purge_enabled": "Disable recorder auto_purge and restart Home Assistant before importing.",
+      "purge_enabled": "Automatic purge is enabled; only points inside the configured purge_keep_days window may be imported.",
       "invalid_csv": "The CSV is invalid or its values do not match the entity type. Check the Home Assistant logs for details.",
       "missing_history": "The selected entity has no existing recorder history.",
       "overlap": "CSV timestamps must all precede the earliest existing recorder state.",
@@ -74,7 +74,8 @@
       "unit_mismatch": "CCU-Historian unit differs from the target entity unit. Automatic conversion is not supported.",
       "historian_empty": "No historical readings found in this period.",
       "historian_data": "Could not load or validate this datapoint's historical values. See the logs.",
-      "no_new_data": "All source rows are already covered by Home Assistant's Recorder history."
+      "no_new_data": "All source rows are already covered by Home Assistant's Recorder history.",
+      "retention_empty": "No historical source data are eligible within the active Recorder retention interval. Nothing was imported."
     }
   }
 }

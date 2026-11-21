@@ -15,6 +15,7 @@ MoreRecords is a **Home Assistant custom integration (development preview)** for
 - Show a row-count/time-range confirmation screen; no import occurs without explicit confirmation.
 - Prepend full-resolution states on the Recorder thread, within a SQLite transaction; leave current entity state unchanged.
 - **Ignore overlap**: any source timestamps already within the existing HA Recorder history range are skipped. Only source rows strictly before the first HA state are inserted, even if the timestamp itself is not present in HA.
+- **Respect automatic Recorder purging**: if enabled, skip source points older than the live `purge_keep_days` cutoff; if disabled, importing older history is unrestricted by retention.
 - English and German configuration flows follow Home Assistant's language selection.
 
 ## Requirements
@@ -22,14 +23,17 @@ MoreRecords is a **Home Assistant custom integration (development preview)** for
 - Home Assistant Core with compatible Recorder internals (initial target: **2026.10+**, not yet verified on a live installation).
 - Recorder configured to use **SQLite**.
 - Existing target entity with at least one Recorder state.
-- **Automatic purging disabled**, or imported full-resolution history will disappear on a later purge:
+- **Recorder retention respected automatically:** when `auto_purge: true` (the default), only source observations newer than or equal to the live `now - purge_keep_days` boundary are eligible. The default `purge_keep_days` is **10**; the integration reads the effective setting from Recorder, not from hardcoded YAML values. When `auto_purge: false`, there is no retention limit imposed by MoreRecords. You do **not** need to disable automatic purging to use the importer.
+
+  Example configuration for retaining 30 days of detailed history:
 
   ```yaml
   recorder:
-    auto_purge: false
+    auto_purge: true
+    purge_keep_days: 30
   ```
 
-  Restart Home Assistant after changing this setting. With purging disabled, all recorded entities grow indefinitely: monitor disk space and database size.
+  With `auto_purge` enabled, imported raw data will still expire normally as the rolling retention window advances. To keep raw history indefinitely, explicitly use `auto_purge: false` and account for database growth. No per-entity retention exceptions are created by MoreRecords.
 - A complete, restorable backup before every import.
 
 ## Installation using HACS (custom repository)
@@ -57,7 +61,7 @@ Supported timestamps: ISO-8601 with offset (recommended), ISO-8601 without offse
 
 Supported state values: finite numbers for numeric sensors, and `on/off`, `true/false` or `1/0` for binary sensors. Unsupported entities and textual sensors are rejected, rather than guessed. Values are assumed to use the target entity's existing unit; no unit conversion occurs.
 
-The initial version accepts at most 100,000 observations per file and rejects conflicting duplicate timestamps. Split larger exports into chronological pieces and import **oldest first**.
+The initial version accepts at most 100,000 observations per file and rejects conflicting duplicate timestamps. When automatic Recorder purging is enabled, CSV rows older than its configured retention window are counted as skipped and never written. Split larger exports into chronological pieces and import **oldest first**.
 
 ## Import directly from CCU-Historian
 
@@ -66,7 +70,7 @@ The initial version accepts at most 100,000 observations per file and rejects co
 3. Enter a search term matching all or part of the **data point display name or parameter**, e.g. `Schalter Küche Decke STATE`. The search also includes interface and physical address. You can search again by returning to the previous step; at most the first 100 matches are shown at once.
 4. Choose the matching datapoint ID and the start/end dates, then review the preview and explicitly confirm the import. Start/end dates refer to the Home Assistant local time zone, with both calendar dates included.
 
-MoreRecords calls CCU-Historian's `getDataPoint` (list metadata) and `getTimeSeriesRaw` (original timestamp/value observations). No PostgreSQL access is required; reads are batched in 31-day windows. Fetching is capped at **100,000 observations per operation**; select shorter date ranges for larger archives. Source and target units must match if both are reported; the importer does **not** automatically rescale values (for example `100%` vs `%`).
+MoreRecords calls CCU-Historian's `getDataPoint` (list metadata) and `getTimeSeriesRaw` (original timestamp/value observations). No PostgreSQL access is required; reads are batched in 31-day windows. Fetching is capped at **100,000 observations per operation**; select shorter date ranges for larger archives. The fetch start is automatically clamped to the live Recorder retention cutoff when `auto_purge` is active, avoiding downloads of data that would immediately expire. Source and target units must match if both are reported; the importer does **not** automatically rescale values (for example `100%` vs `%`).
 
 CCU-Historian runs on the configured Home Assistant network. For API-key-protected installations, use HTTPS where possible because the Historian API key is sent as a URL query parameter over the connection. The integration never modifies CCU-Historian data.
 
@@ -74,7 +78,7 @@ CCU-Historian runs on the configured Home Assistant network. For API-key-protect
 
 1. Choose an entity and upload the CSV.
 2. MoreRecords validates the CSV or CCU-Historian data and compares its timestamps with the first recorded state of the entity. **Only rows strictly older than the first HA state are eligible**. Other source rows are ignored as overlapping the existing HA Recorder time range.
-3. Review the entity, total source row count, eligible import count, ignored-overlap count, source time range, and earliest existing HA timestamp.
+3. Review the entity, total source row count, eligible import count, skipped-overlap count, skipped-retention count, current auto-purge setting and cutoff, source time range, and earliest existing HA timestamp.
 4. Explicitly confirm. The internal Recorder task performs an atomic SQLite prepend. The wizard reports the row count on success.
 
 Repeating the same source import produces no new rows (already covered values are skipped; if all are covered, the import wizard declines to proceed). Existing Recorder rows are not overwritten. The importer does not create statistics or write into the current in-memory entity state.
@@ -88,7 +92,7 @@ Repeating the same source import produces no new rows (already covered values ar
 - Full-resolution Recorder states are separate from long-term statistics. MoreRecords does not import or rebuild historical long-term statistics.
 - Prepending is intentionally limited to the time **before** the first recorded state. Source measurements within the existing HA history range are silently skipped, even when HA has no row at an exact source timestamp. Filling gaps within this existing range, overriding existing data and undoing completed imports are not supported.
 - An import runs synchronously on the Recorder queue. Very large CSV files may delay other recorded events. Keep imports small and inspect logs.
-- Recorder `auto_purge: false` prevents automatic cleanup of **all** entities, not just imported ones.
+- Recorder `auto_purge: false` prevents automatic cleanup of **all** entities, not just imported ones. If auto-purge is enabled, the integration filters out states already past the rolling retention boundary. Home Assistant may remove imported states later as the window advances, including during the next scheduled purge.
 
 ## Development
 

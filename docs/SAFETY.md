@@ -4,7 +4,7 @@ MoreRecords writes private Home Assistant Recorder tables. Use only after a **fu
 
 ## Preconditions
 
-1. Configure `recorder: {auto_purge: false}` in Home Assistant and restart; do not rely on a change that has not been applied.
+1. Check the effective Recorder retention configuration. With `auto_purge: true`, MoreRecords only imports points within the active `purge_keep_days` window (default: 10 days). With `auto_purge: false`, old data remain eligible; no setting changes are required to import.
 2. Confirm there is enough disk space for the expanded SQLite database.
 3. Test with a disposable Home Assistant instance and a copied database before enabling on a production system.
 4. Import only values with the same unit and state semantics as the destination entity.
@@ -18,7 +18,7 @@ The optional URL may point to a private network service; only administrators sho
 
 The writer uses `States`, `StatesMeta`, a custom `RecorderTask`, and SQLAlchemy against the live SQLite Recorder. These are **not public extension APIs**; Home Assistant updates can change their behavior. A confirmed import is committed atomically, but an HA backup is still essential. Failures before commit should roll back; recovery of an already committed import requires restoration of the backup.
 
-Disabling `auto_purge` preserves the raw history, but also keeps unrelated data indefinitely. Do not run a full manual Recorder purge if you need to keep imported observations.
+MoreRecords reads the running Recorder's `auto_purge` and `keep_days` settings. When automatic purging is active, only points at or after the current UTC retention boundary are written, and the cutoff is checked again in the Recorder-thread transaction. These points will **still age out** as Home Assistant's rolling retention window advances (possibly at the next nightly purge). This filtering avoids knowingly importing already expired records, but does not guarantee any minimum remaining lifetime. Disabling `auto_purge` preserves raw history, but also keeps unrelated data indefinitely. A manual purge may still delete imported observations.
 
 ## Important semantic limitations
 

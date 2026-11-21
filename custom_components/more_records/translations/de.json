@@ -22,14 +22,14 @@
       },
       "confirm": {
         "title": "Historischen Import bestätigen",
-        "description": "Ziel: {entity_id}\nQuelle: {source}\nQuellmesswerte: {total}\nNeue historische Werte: {importable}\nVon HA bereits abgedeckte Werte: {skipped}\nQuellbeginn (UTC): {first}\nQuellende (UTC): {last}\nÄltester HA-Eintrag (UTC): {oldest}\n\nDer bestehende Recorder-Verlauf bleibt erhalten. Importiert wird nur vor dem ersten vorhandenen Eintrag. Ein geprüftes Backup ist erforderlich; für dauerhaft vollständige Rohdaten Recorder auto_purge deaktivieren.",
+        "description": "Ziel: {entity_id}\nQuelle: {source}\nQuellmesswerte: {total}\nNeue historische Werte: {importable}\nÜbersprungen (HA-Verlauf vorhanden): {skipped_overlap}\nÜbersprungen (außerhalb der Aufbewahrung): {skipped_retention}\nRecorder-Einstellung: {retention}\nAufbewahrungsgrenze (UTC): {purge_before}\nQuellbeginn (UTC): {first}\nQuellende (UTC): {last}\nÄltester HA-Eintrag (UTC): {oldest}\n\nEs werden nur Daten innerhalb der aktuellen Recorder-Aufbewahrungsfrist und vor dem ersten HA-Zustand eingefügt. Bei deaktiviertem auto_purge entfällt die zeitliche Grenze. Bei aktiviertem auto_purge werden ältere Werte nicht dauerhaft behalten. Bitte vor Bestätigung Backup prüfen.",
         "data": {
           "confirm": "Ich habe ein Backup und möchte die fehlenden Werte importieren"
         }
       },
       "csv": {
         "title": "CSV-Datei hochladen",
-        "description": "Wähle eine CSV-Datei mit den Spalten Zeitstempel und Wert. Nur fehlende historische Messwerte vor dem ersten HA-Eintrag werden eingefügt.",
+        "description": "Lade eine CSV-Datei mit Zeitstempel und Wert hoch. MoreRecords überspringt bereits vom HA-Recorder abgedeckte Werte und Werte außerhalb der Aufbewahrungsfrist.",
         "data": {
           "file": "CSV-Datei"
         }
@@ -51,7 +51,7 @@
       },
       "historian_point": {
         "title": "Datenpunkt und Zeitraum wählen",
-        "description": "Wähle den Datenpunkt aus der Trefferliste und anschließend den Datenzeitraum. Vorhandene HA-Verläufe werden nie überschrieben. Über Zurück kannst du erneut suchen.",
+        "description": "Wähle Datenpunkt und Zeitraum. Bei aktiviertem auto_purge ruft MoreRecords nur Werte innerhalb der eingestellten Aufbewahrungsfrist ab. Bestehende HA-Verläufe werden nicht überschrieben.",
         "data": {
           "point_id": "CCU-Historian-Datenpunkt",
           "start_date": "Erster Tag",
@@ -62,7 +62,7 @@
     "error": {
       "invalid_entity": "Wähle einen vorhandenen, aufgezeichneten numerischen Sensor oder Binärsensor.",
       "sqlite_only": "Diese Version unterstützt nur SQLite als Recorder.",
-      "purge_enabled": "Deaktiviere recorder auto_purge und starte Home Assistant neu.",
+      "purge_enabled": "Automatische Recorder-Bereinigung aktiv: Es werden nur Werte innerhalb von purge_keep_days übernommen.",
       "invalid_csv": "CSV ungültig oder Werte passen nicht zum Entitätstyp. Details stehen im Home-Assistant-Protokoll.",
       "missing_history": "Für die Entität ist noch kein Recorder-Verlauf vorhanden.",
       "overlap": "Alle CSV-Zeitstempel müssen vor dem ältesten Recorder-Zustand liegen.",
@@ -74,7 +74,8 @@
       "unit_mismatch": "Die CCU-Historian-Einheit unterscheidet sich von der Einheit der HA-Entität. Automatische Umrechnung wird nicht unterstützt.",
       "historian_empty": "Keine Messwerte im gewählten Zeitraum vorhanden.",
       "historian_data": "Die historischen Daten konnten nicht geladen oder validiert werden. Siehe Protokoll.",
-      "no_new_data": "Alle Quellmesswerte liegen bereits im vorhandenen HA-Recorder-Zeitraum."
+      "no_new_data": "Alle Quellmesswerte liegen bereits im vorhandenen HA-Recorder-Zeitraum.",
+      "retention_empty": "Innerhalb der aktuellen Recorder-Aufbewahrungsfrist sind keine älteren Quellwerte importierbar. Es wurde nichts importiert."
     }
   }
 }

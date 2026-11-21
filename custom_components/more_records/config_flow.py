@@ -5,6 +5,8 @@ from __future__ import annotations
 from datetime import datetime, timezone
 import logging
 from pathlib import Path
+import math
+import time
 from typing import Any
 
 import voluptuous as vol
@@ -31,7 +33,7 @@ from .ccu_historian import (
 )
 from .const import DOMAIN
 from .csv_import import CsvImportError, HistoryRow, parse_csv
-from .merge_policy import ImportPlan, plan_prefix
+from .merge_policy import ImportPlan, plan_prefix, retention_boundary
 from .recorder_import import (
     RecorderImportError,
     async_first_state_timestamp,
@@ -40,6 +42,10 @@ from .recorder_import import (
 from .validation import ValidationError, validate_rows
 
 _LOGGER = logging.getLogger(__name__)
+
+
+class RetentionNoDataError(RecorderImportError):
+    """No source states survive the active Recorder purge window."""
 
 
 class MoreRecordsConfigFlow(ConfigFlow, domain=DOMAIN):
@@ -102,9 +108,22 @@ class MoreRecordsOptionsFlow(OptionsFlow):
         cutoff = await async_first_state_timestamp(self.hass, self._entity_id)
         if cutoff is None:
             raise RecorderImportError("No existing Recorder state")
-        plan = plan_prefix(normalized, cutoff)
+        recorder = get_instance(self.hass)
+        purge_before = retention_boundary(
+            recorder.auto_purge, recorder.keep_days, time.time()
+        )
+        plan = plan_prefix(
+            normalized, cutoff, purge_before=purge_before
+        )
         if not plan.eligible:
-            raise RecorderImportError("All source rows overlap existing Recorder history")
+            if plan.skipped_retention:
+                raise RetentionNoDataError(
+                    "No source rows fall between the live Recorder retention "
+                    "boundary and the beginning of existing HA history"
+                )
+            raise RecorderImportError(
+                "All source rows overlap existing Recorder history"
+            )
 
         self._rows = normalized
         self._plan = plan
@@ -114,6 +133,16 @@ class MoreRecordsOptionsFlow(OptionsFlow):
             "total": str(plan.total),
             "importable": str(len(plan.eligible)),
             "skipped": str(plan.skipped),
+            "skipped_overlap": str(plan.skipped_overlap),
+            "skipped_retention": str(plan.skipped_retention),
+            "retention": (
+                f"auto_purge=true, purge_keep_days={recorder.keep_days}"
+                if recorder.auto_purge else "auto_purge=false"
+            ),
+            "purge_before": (
+                datetime.fromtimestamp(purge_before, timezone.utc).isoformat()
+                if purge_before is not None else "—"
+            ),
             "first": datetime.fromtimestamp(
                 normalized[0].timestamp, timezone.utc
             ).isoformat(),
@@ -133,8 +162,6 @@ class MoreRecordsOptionsFlow(OptionsFlow):
                 errors["base"] = "invalid_entity"
             elif recorder.engine is None or recorder.engine.dialect.name != "sqlite":
                 errors["base"] = "sqlite_only"
-            elif recorder.auto_purge:
-                errors["base"] = "purge_enabled"
             else:
                 self._entity_id = entity_id
                 self._source = user_input["source"]
@@ -171,8 +198,13 @@ class MoreRecordsOptionsFlow(OptionsFlow):
                 )
                 await self._prepare(rows, "CSV")
                 return await self.async_step_confirm()
-            except (CsvImportError, ValidationError, RecorderImportError,
-                    OSError, ValueError) as err:
+            except RetentionNoDataError as err:
+                _LOGGER.info("CSV contains no retained historical data: %s", err)
+                errors["base"] = "retention_empty"
+            except RecorderImportError as err:
+                _LOGGER.info("CSV import does not add older history: %s", err)
+                errors["base"] = "no_new_data"
+            except (CsvImportError, ValidationError, OSError, ValueError) as err:
                 _LOGGER.warning("MoreRecords CSV rejected: %s", err)
                 errors["base"] = "invalid_csv"
         return self.async_show_form(
@@ -275,29 +307,44 @@ class MoreRecordsOptionsFlow(OptionsFlow):
                             user_input["start_date"], user_input["end_date"],
                             self.hass.config.time_zone,
                         )
-                        client = HistorianClient(
-                            async_get_clientsession(self.hass),
-                            self._ccu_url,
-                            self._ccu_api_key,
+                        # Avoid requesting years of CCU-Historian data that
+                        # Home Assistant would automatically purge anyway.
+                        recorder = get_instance(self.hass)
+                        purge_before = retention_boundary(
+                            recorder.auto_purge, recorder.keep_days, time.time()
                         )
-                        rows = await client.async_history(
-                            point.idx, start_ms, end_ms
-                        )
-                        if not rows:
-                            errors["base"] = "historian_empty"
+                        if purge_before is not None:
+                            start_ms = max(
+                                start_ms, math.ceil(purge_before * 1000)
+                            )
+                        if start_ms >= end_ms:
+                            errors["base"] = "retention_empty"
                         else:
-                            await self._prepare(rows, f"CCU-Historian: {point.label}")
-                            return await self.async_step_confirm()
-                except (HistorianError, ValidationError,
-                        RecorderImportError, ValueError) as err:
+                            client = HistorianClient(
+                                async_get_clientsession(self.hass),
+                                self._ccu_url,
+                                self._ccu_api_key,
+                            )
+                            rows = await client.async_history(
+                                point.idx, start_ms, end_ms
+                            )
+                            if not rows:
+                                errors["base"] = "historian_empty"
+                            else:
+                                await self._prepare(
+                                    rows, f"CCU-Historian: {point.label}"
+                                )
+                                return await self.async_step_confirm()
+                except RetentionNoDataError as err:
+                    _LOGGER.info("No retained CCU-Historian rows: %s", err)
+                    errors["base"] = "retention_empty"
+                except RecorderImportError as err:
+                    _LOGGER.info("CCU-Historian history already present: %s", err)
+                    errors["base"] = "no_new_data"
+                except (HistorianError, ValidationError, ValueError) as err:
                     _LOGGER.warning("CCU-Historian data rejected: %s",
                                     type(err).__name__)
-                    errors["base"] = (
-                        "no_new_data"
-                        if isinstance(err, RecorderImportError)
-                        and "overlap" in str(err)
-                        else "historian_data"
-                    )
+                    errors["base"] = "historian_data"
 
         today = datetime.now(timezone.utc).date().isoformat()
         return self.async_show_form(
@@ -336,8 +383,6 @@ class MoreRecordsOptionsFlow(OptionsFlow):
             else:
                 try:
                     recorder = get_instance(self.hass)
-                    if recorder.auto_purge:
-                        raise RecorderImportError("Recorder auto purge is enabled")
                     validate_rows(
                         self.hass.states.get(self._entity_id),
                         self._rows,
@@ -361,6 +406,8 @@ class MoreRecordsOptionsFlow(OptionsFlow):
                             "last_entity_id": self._entity_id,
                             "last_imported": outcome.inserted,
                             "last_skipped": outcome.skipped,
+                            "last_skipped_overlap": outcome.skipped_overlap,
+                            "last_skipped_retention": outcome.skipped_retention,
                             "last_import_utc": datetime.now(timezone.utc).isoformat(),
                         }
                     )

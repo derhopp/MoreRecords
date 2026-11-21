@@ -2,14 +2,16 @@
 
 Recorder internals are private and version-sensitive. Run on a test Home
 Assistant installation with a restorable backup before production use.
-All imported points are before the first existing state. Source points
-that overlap existing HA history are silently skipped, never overwritten.
+Imported points must both precede the first existing state and fall within
+the Recorder retention window if auto_purge is enabled. Source points outside
+these limits are skipped without modifying existing states.
 """
 
 from __future__ import annotations
 
 import asyncio
 import concurrent.futures
+import time
 from dataclasses import dataclass
 from typing import Any
 
@@ -20,7 +22,7 @@ from homeassistant.components.recorder.db_schema import States, StatesMeta
 from homeassistant.components.recorder.tasks import RecorderTask
 
 from .csv_import import HistoryRow
-from .merge_policy import plan_prefix
+from .merge_policy import plan_prefix, retention_boundary
 
 
 class RecorderImportError(ValueError):
@@ -32,7 +34,13 @@ class ImportOutcome:
     """Counts from the committed transaction, not just the earlier preview."""
 
     inserted: int
-    skipped: int
+    skipped_overlap: int
+    skipped_retention: int
+
+    @property
+    def skipped(self) -> int:
+        """Return all skipped source observations."""
+        return self.skipped_overlap + self.skipped_retention
 
 
 def _get_first(
@@ -69,8 +77,6 @@ def _write(recorder: Any, entity_id: str, source_rows: list[HistoryRow]) -> Impo
     """Recheck cutoff and atomically prepend the non-overlapping prefix."""
     if recorder.engine is None or recorder.engine.dialect.name != "sqlite":
         raise RecorderImportError("Only SQLite Recorder databases are supported")
-    if recorder.auto_purge:
-        raise RecorderImportError("Disable recorder.auto_purge before importing")
     if not source_rows:
         raise RecorderImportError("No data to import")
 
@@ -101,10 +107,19 @@ def _write(recorder: Any, entity_id: str, source_rows: list[HistoryRow]) -> Impo
                     "Earliest state references an unexpected predecessor"
                 )
 
-            # Policy is rerun under this transaction; no preview/write TOCTOU.
-            plan = plan_prefix(source_rows, float(cutoff))
+            # Re-evaluate the live Recorder configuration and current UTC time
+            # inside the write transaction. A long-open preview cannot bypass
+            # auto_purge or import data outside the current retention window.
+            purge_before = retention_boundary(
+                recorder.auto_purge, recorder.keep_days, time.time()
+            )
+            plan = plan_prefix(
+                source_rows, float(cutoff), purge_before=purge_before
+            )
             if not plan.eligible:
-                return ImportOutcome(0, plan.skipped)
+                return ImportOutcome(
+                    0, plan.skipped_overlap, plan.skipped_retention
+                )
 
             previous_value: str | None = None
             last_change: float | None = None
@@ -169,7 +184,9 @@ def _write(recorder: Any, entity_id: str, source_rows: list[HistoryRow]) -> Impo
             if updated.rowcount != 1:
                 raise RecorderImportError("First existing state changed during import")
             session.commit()
-            return ImportOutcome(len(plan.eligible), plan.skipped)
+            return ImportOutcome(
+                len(plan.eligible), plan.skipped_overlap, plan.skipped_retention
+            )
         except Exception:
             session.rollback()
             raise
@@ -194,7 +211,7 @@ class _PrependTask(RecorderTask):
 async def async_prepend_states(
     hass: Any, entity_id: str, rows: list[HistoryRow]
 ) -> ImportOutcome:
-    """Import missing prefix states, skipping any Recorder-covered times."""
+    """Import eligible prefix states, skipping overlaps and auto-purge-expired rows."""
     recorder = get_instance(hass)
     future: concurrent.futures.Future[ImportOutcome] = concurrent.futures.Future()
     recorder.queue_task(_PrependTask(future, entity_id, rows))
