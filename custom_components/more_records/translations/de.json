@@ -36,7 +36,7 @@
       },
       "historian_connect": {
         "title": "Mit CCU-Historian verbinden",
-        "description": "Gib die Web-Adresse einschließlich Port ein. Ein optionaler API-Schlüssel wird in den Integrationseinstellungen gespeichert.",
+        "description": "Gib die Web-Adresse einschließlich Port ein. Ein optionaler API-Schlüssel wird in den Integrationseinstellungen gespeichert.\n\nLetzte Verbindungsdiagnose: {diagnostic}",
         "data": {
           "url": "Historian-Web-Adresse",
           "api_key": "API-Schlüssel (optional)"

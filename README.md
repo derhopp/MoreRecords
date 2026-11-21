@@ -72,6 +72,18 @@ The initial version accepts at most 100,000 observations per file and rejects co
 
 MoreRecords calls CCU-Historian's `getDataPoint` (list metadata) and `getTimeSeriesRaw` (original timestamp/value observations). No PostgreSQL access is required; reads are batched in 31-day windows. Fetching is capped at **100,000 observations per operation**; select shorter date ranges for larger archives. The fetch start is automatically clamped to the live Recorder retention cutoff when `auto_purge` is active, avoiding downloads of data that would immediately expire. Source and target units must match if both are reported; the importer does **not** automatically rescale values (for example `100%` vs `%`).
 
+### Troubleshooting CCU-Historian connectivity
+
+If the HA wizard reports that the datapoint list could not be loaded, read the **Last connection diagnostic** displayed on the connection step and the `custom_components.more_records` Home Assistant log message. Reachability from a desktop browser does **not** prove that Home Assistant itself can reach the server. MoreRecords normalizes `http://192.168.1.48:8081` to `http://192.168.1.48:8081/query/jsonrpc.gy`. Leave the API key blank if you have not configured `webServer.apiKeys`.
+
+Check these URLs from a browser on your network:
+
+- `http://192.168.1.48:8081/query/jsonrpc.gy?m=echo&p1=ping&i=1` should return JSON with `result`.
+- `http://192.168.1.48:8081/query/jsonrpc.gy?m=getDataPoint&p1=2141&i=1` should return the selected datapoint.
+- `http://192.168.1.48:8081/query/jsonrpc.gy?m=getDataPoint&i=1` should return the full datapoint list. This response can be large.
+
+The importer reads the full HTTP response in chunks rather than assuming a single read returns a complete JSON document. Check local network/firewall access **from Home Assistant** for timeout or connection errors. An HTTP 404 can indicate the wrong port/path; HTTP 401/403 indicates restricted access. Errors are shown without logging the configured API key.
+
 CCU-Historian runs on the configured Home Assistant network. For API-key-protected installations, use HTTPS where possible because the Historian API key is sent as a URL query parameter over the connection. The integration never modifies CCU-Historian data.
 
 ## Import workflow

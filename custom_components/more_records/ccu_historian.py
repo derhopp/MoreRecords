@@ -13,13 +13,16 @@ from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 import json
 import math
-from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
+from urllib.parse import urlencode, urlsplit, urlunsplit
 from zoneinfo import ZoneInfo
+
+from aiohttp import ClientError
 
 from .const import MAX_IMPORT_ROWS
 from .csv_import import HistoryRow
 
-MAX_RESPONSE_BYTES = 12 * 1024 * 1024
+MAX_RESPONSE_BYTES = 32 * 1024 * 1024
+HTTP_READ_CHUNK_BYTES = 64 * 1024
 MAX_POINT_OPTIONS = 100
 WINDOW_DAYS = 31
 MAX_POINTS = 20000
@@ -194,6 +197,25 @@ def sort_unique(rows: list[HistoryRow]) -> list[HistoryRow]:
     return unique
 
 
+async def read_response_complete(response: object, limit: int = MAX_RESPONSE_BYTES) -> bytes:
+    """Read *all* of a JSON-RPC response, enforcing a size limit.
+
+    aiohttp StreamReader.read(n) may return fewer than n bytes even if more
+    data will arrive later. Read until EOF; otherwise a valid large response
+    can look like truncated JSON and break datapoint discovery.
+    """
+    chunks: list[bytes] = []
+    total = 0
+    async for chunk in response.content.iter_chunked(HTTP_READ_CHUNK_BYTES):
+        total += len(chunk)
+        if total > limit:
+            raise HistorianError(
+                f"CCU-Historian JSON response exceeds {limit // 1048576} MiB"
+            )
+        chunks.append(chunk)
+    return b"".join(chunks)
+
+
 class HistorianClient:
     """Call the read-only JSON-RPC API using Home Assistant's aiohttp session."""
 
@@ -211,15 +233,32 @@ class HistorianClient:
                     allow_redirects=False,
                 ) as response:
                     if response.status != 200:
+                        if response.status in (401, 403):
+                            raise HistorianError(
+                                f"CCU-Historian HTTP {response.status}: access denied; "
+                                "check the configured API key"
+                            )
+                        if response.status in (301, 302, 307, 308):
+                            raise HistorianError(
+                                f"CCU-Historian HTTP {response.status}: redirected; "
+                                "check the server address, port, and API path"
+                            )
                         raise HistorianError(
-                            f"Historian HTTP response: {response.status}"
+                            f"CCU-Historian HTTP {response.status}: verify the "
+                            "JSON-RPC endpoint /query/jsonrpc.gy"
                         )
-                    payload = await response.content.read(MAX_RESPONSE_BYTES + 1)
-                    if len(payload) > MAX_RESPONSE_BYTES:
-                        raise HistorianError("Historian response exceeds safety limit")
+                    payload = await read_response_complete(response)
             data = json.loads(payload)
-        except (OSError, asyncio.TimeoutError, UnicodeError, json.JSONDecodeError) as err:
-            raise HistorianError(f"Could not query CCU-Historian: {type(err).__name__}") from err
+        except (ClientError, OSError, asyncio.TimeoutError) as err:
+            raise HistorianError(
+                f"CCU-Historian request failed ({type(err).__name__}); "
+                "check reachability from Home Assistant, not just from a browser"
+            ) from err
+        except (UnicodeError, json.JSONDecodeError) as err:
+            raise HistorianError(
+                "CCU-Historian returned invalid JSON; check whether the "
+                "configured URL points to the JSON-RPC server"
+            ) from err
         if not isinstance(data, dict):
             raise HistorianError("Unexpected Historian JSON-RPC response")
         if data.get("error") is not None:

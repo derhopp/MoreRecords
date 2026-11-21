@@ -36,7 +36,7 @@
       },
       "historian_connect": {
         "title": "Connect to CCU-Historian",
-        "description": "Enter the CCU-Historian web address (including port). The API key is optional and is stored in the integration options.",
+        "description": "Enter the CCU-Historian web address (including port). The API key is optional and is stored in the integration options.\n\nLast connection diagnostic: {diagnostic}",
         "data": {
           "url": "Historian web address",
           "api_key": "API key (optional)"

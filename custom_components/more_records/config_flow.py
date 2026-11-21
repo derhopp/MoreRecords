@@ -214,6 +214,7 @@ class MoreRecordsOptionsFlow(OptionsFlow):
     ):
         """Configure Historian address and read available datapoints."""
         errors: dict[str, str] = {}
+        diagnostic = "—"
         if user_input is not None:
             self._ccu_url = user_input["url"].strip()
             self._ccu_api_key = (user_input.get("api_key") or "").strip()
@@ -229,8 +230,13 @@ class MoreRecordsOptionsFlow(OptionsFlow):
                     raise HistorianError("No datapoints available")
                 return await self.async_step_historian_search()
             except HistorianError as err:
-                _LOGGER.warning("CCU-Historian connection failed: %s",
-                                type(err).__name__)
+                # Keep diagnostics actionable. RPC errors deliberately avoid
+                # including the configured API key or full request URL.
+                diagnostic = str(err)[:300]
+                _LOGGER.warning(
+                    "CCU-Historian datapoint discovery failed: %s",
+                    diagnostic,
+                )
                 errors["base"] = "historian_connection"
 
         saved = self.config_entry.options
@@ -248,6 +254,7 @@ class MoreRecordsOptionsFlow(OptionsFlow):
                 }
             ),
             errors=errors,
+            description_placeholders={"diagnostic": diagnostic},
         )
 
     async def async_step_historian_search(

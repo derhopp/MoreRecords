@@ -45,3 +45,7 @@
 ## Out of scope (initial version)
 
 Recurring imports, merging gaps, automatic unit conversion, textual sensors, non-SQLite databases, import undo, and automatic long-term statistics generation.
+
+## CCU-Historian connection diagnostics
+
+The JSON-RPC `getDataPoint` request without parameters lists all archived datapoints. The response may be large; read the full HTTP stream in bounded chunks rather than using one `StreamReader.read(n)`. Surface redacted, actionable error detail in the wizard and Home Assistant logs. Tests must cover chunked responses, oversized payloads and HTTP errors. Check that the exact API works from the Home Assistant host or container, not only a browser on a separate computer.
