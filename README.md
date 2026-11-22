@@ -154,3 +154,11 @@ See [Development plan](docs/DEVELOPMENT.md) and [Safety](docs/SAFETY.md). No rel
 ## License
 
 MIT — see [LICENSE](LICENSE).
+
+## Verified CCU-Historian continuity for LightAway
+
+MoreRecords can optionally save a **local, per-entity coverage attestation** only after a CCU-Historian import or *verification-only* query: the operator explicitly confirms that CCU-Historian stored **every state change** in the queried interval and MoreRecords verifies all returned observations against the actual Recorder rows. The attestation starts at the first real source observation; no initial state is invented. It contains entity ID and UTC time bounds only, never raw readings or Historian credentials, and is stored in Home Assistant `.storage/more_records_verified_history_v1`.
+
+An unchanged `on` state over many weeks is eligible *only when the whole queried interval is confirmed complete* and its source readings match Recorder. Merely seeing an old state in a CSV is insufficient. Importing older data via CSV **does not** establish continuous coverage. If no new rows need writing, a CCU-Historian query can still be explicitly verified; the importer will not overwrite existing Recorder history. A mismatched source/Recorder query is rejected for coverage, and an import might already have been committed before the final check. Be sure the queried interval has no missing or untrusted CCU measurements before confirming.
+
+LightAway can use such entity-specific verified intervals separately from actual Recorder runs, without fabricating `RecorderRuns` records. **Do not manually edit the coverage store.** If you change, purge or replace the recorded history, re-import/re-verify the original Historian interval before trusting it. The coverage attestation is a claim about complete source observation, not about the Recorder process running in the past.

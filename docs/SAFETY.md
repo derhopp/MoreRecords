@@ -39,3 +39,9 @@ Record the Home Assistant Core version, integration version, entity ID, CSV row 
 ## CCU-Historian timestamp collisions
 
 When the CCU-Historian API returns multiple values at the same timestamp, the direct importer preserves the final source observation and drops earlier values at that exact instant. The preview and logs report collision counts. This can lose instantaneous intermediate events, but avoids fabricated timestamps; review conflicts if exact switching sequence matters.
+
+## CCU-Historian completeness and locally attested coverage
+
+An extra opt-in confirmation is required before MoreRecords records source-history coverage. Confirmation must mean that the selected CCU-Historian datapoint continuously captured **all changes** throughout the requested interval, not merely that the returned rows have valid syntax. The lower bound is the first actual source reading, never the query start if that state was unknown. MoreRecords compares all source rows in the attested interval with persisted Recorder rows, refusing a certificate on any mismatch. Empty and CSV-derived histories cannot be attested. The entity-scoped `.storage/more_records_verified_history_v1` contains only entity IDs, source labels, evidence type and bounds; no credentials or state values.
+
+No artificial HA `RecorderRuns` are inserted. The metadata does not independently prove that a Recorder has never been purged or modified later; verify the data again after repairs, purges or upgrades. Do not affirm source completeness without reliable Historian retention and source integrity. Backup and restore the HA configuration as well as the Recorder database.

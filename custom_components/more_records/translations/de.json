@@ -21,9 +21,10 @@
       },
       "confirm": {
         "title": "Historischen Import bestätigen",
-        "description": "Ziel: {entity_id}\nQuelle: {source}\nQuellmesswerte: {total}\nNeue historische Werte: {importable}\nÜbersprungen (HA-Verlauf vorhanden): {skipped_overlap}\nÜbersprungen (außerhalb der Aufbewahrung): {skipped_retention}\nÜbersprungene CCU-Historian-Zeilen mit gleichem Zeitstempel: {duplicate_rows}\nWidersprüchliche Zeitstempel (letzter Quellwert übernommen): {conflicting_timestamps}\nRecorder-Einstellung: {retention}\nAufbewahrungsgrenze (UTC): {purge_before}\nQuellbeginn (UTC): {first}\nQuellende (UTC): {last}\nÄltester HA-Eintrag (UTC): {oldest}\n\nEs werden nur Daten innerhalb der aktuellen Recorder-Aufbewahrungsfrist und vor dem ersten HA-Zustand eingefügt. Bei deaktiviertem auto_purge entfällt die zeitliche Grenze. Bei aktiviertem auto_purge werden ältere Werte nicht dauerhaft behalten. Bitte vor Bestätigung Backup prüfen.",
+        "description": "Ziel: {entity_id}\nQuelle: {source}\nQuellmesswerte: {total}\nNeue historische Werte: {importable}\nÜbersprungen (HA-Verlauf vorhanden): {skipped_overlap}\nÜbersprungen (außerhalb der Aufbewahrung): {skipped_retention}\nÜbersprungene CCU-Historian-Zeilen mit gleichem Zeitstempel: {duplicate_rows}\nWidersprüchliche Zeitstempel (letzter Quellwert übernommen): {conflicting_timestamps}\nRecorder-Einstellung: {retention}\nAufbewahrungsgrenze (UTC): {purge_before}\nQuellbeginn (UTC): {first}\nQuellende (UTC): {last}\nÄltester HA-Eintrag (UTC): {oldest}\n\nEs werden nur Daten innerhalb der aktuellen Recorder-Aufbewahrungsfrist und vor dem ersten HA-Zustand eingefügt. Bei deaktiviertem auto_purge entfällt die zeitliche Grenze. Bei aktiviertem auto_purge werden ältere Werte nicht dauerhaft behalten. Bitte vor Bestätigung Backup prüfen.\\n\\nVerifizierter CCU-Historian-Zeitraum: {coverage}. Nur eine vollständig abgefragte, unveränderte Quelle darf als lückenlos bestätigt werden. CSVs sind davon ausgeschlossen. Die Bestätigung ist nötig; ohne sie wird kein Nachweis erzeugt.",
         "data": {
-          "confirm": "Ich habe ein Backup und möchte die fehlenden Werte importieren"
+          "confirm": "Ich habe ein Backup und möchte die fehlenden Werte importieren",
+          "confirm_complete_history": "Ich bestätige, dass CCU-Historian für den gewählten Zeitraum alle Zustandsänderungen des Datenpunkts vollständig gespeichert hat"
         }
       },
       "csv": {
@@ -106,7 +107,9 @@
       "export_invalid": "Ungültiger Zeitraum. Bitte Diagnose prüfen.",
       "export_empty": "Keine Recorder-Zustände im ausgewählten Zeitraum.",
       "export_too_large": "Mehr als 100.000 Zeilen; bitte Zeitraum verkürzen.",
-      "export_failed": "Recorder-Daten konnten nicht gelesen werden. Siehe Protokoll."
+      "export_failed": "Recorder-Daten konnten nicht gelesen werden. Siehe Protokoll.",
+      "coverage_confirmation_required": "Bitte bestätige ausdrücklich die Vollständigkeit der abgefragten Historie.",
+      "coverage_verification_failed": "Recorder-Daten stimmen nicht vollständig mit CCU-Historian überein. Es wurde kein Kontinuitätsnachweis gespeichert. Bereits importierte Zustände können trotzdem vorhanden sein."
     }
   }
 }

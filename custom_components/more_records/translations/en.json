@@ -21,9 +21,10 @@
       },
       "confirm": {
         "title": "Confirm historical import",
-        "description": "Target: {entity_id}\nSource: {source}\nSource rows: {total}\nNew historical rows: {importable}\nSkipped (existing HA history): {skipped_overlap}\nSkipped (outside Recorder retention): {skipped_retention}\nCCU-Historian duplicate rows dropped: {duplicate_rows}\nConflicting timestamps resolved (last source value kept): {conflicting_timestamps}\nRecorder configuration: {retention}\nRetention cutoff (UTC): {purge_before}\nSource start (UTC): {first}\nSource end (UTC): {last}\nEarliest existing HA state (UTC): {oldest}\n\nOnly source data within the current Recorder retention window and before the first existing HA state will be imported. If automatic purging is disabled, no retention cutoff applies. Older data will not be kept with auto_purge enabled. Verify your backup before confirming.",
+        "description": "Target: {entity_id}\nSource: {source}\nSource rows: {total}\nNew historical rows: {importable}\nSkipped (existing HA history): {skipped_overlap}\nSkipped (outside Recorder retention): {skipped_retention}\nCCU-Historian duplicate rows dropped: {duplicate_rows}\nConflicting timestamps resolved (last source value kept): {conflicting_timestamps}\nRecorder configuration: {retention}\nRetention cutoff (UTC): {purge_before}\nSource start (UTC): {first}\nSource end (UTC): {last}\nEarliest existing HA state (UTC): {oldest}\n\nOnly source data within the current Recorder retention window and before the first existing HA state will be imported. If automatic purging is disabled, no retention cutoff applies. Older data will not be kept with auto_purge enabled. Verify your backup before confirming.\\n\\nVerified CCU-Historian coverage: {coverage}. Only a complete, unchanged source query can be attested as continuous. CSV sources are excluded. This extra confirmation is required before an attestation can be recorded.",
         "data": {
-          "confirm": "I have a backup and want to import the missing rows"
+          "confirm": "I have a backup and want to import the missing rows",
+          "confirm_complete_history": "I confirm CCU-Historian has retained every state change for this datapoint throughout the selected query period"
         }
       },
       "csv": {
@@ -106,7 +107,9 @@
       "export_invalid": "Invalid date/time interval. Review the diagnostic.",
       "export_empty": "No Recorder states in the selected range.",
       "export_too_large": "More than 100,000 rows; choose a shorter interval.",
-      "export_failed": "Could not read Recorder data. See the logs."
+      "export_failed": "Could not read Recorder data. See the logs.",
+      "coverage_confirmation_required": "Explicitly confirm that the CCU-Historian query is complete.",
+      "coverage_verification_failed": "Recorder values do not fully match CCU-Historian. No continuity evidence was saved. Already imported history may still be present."
     }
   }
 }
