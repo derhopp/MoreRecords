@@ -9,7 +9,8 @@ The store contains intervals and entity IDs, never measurements or credentials.
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime, timezone
+import hashlib
+import json
 import math
 from typing import Any
 
@@ -24,6 +25,15 @@ from .csv_import import HistoryRow
 COVERAGE_STORE_KEY = "more_records_verified_history_v1"
 COVERAGE_STORE_VERSION = 1
 MAX_INTERVALS = 2048
+
+
+def state_fingerprint(rows: list[tuple[float, str]]) -> str:
+    """Stable SHA-256 of all ordered persisted samples in a verified range."""
+    digest = hashlib.sha256()
+    for timestamp, state in rows:
+        digest.update(json.dumps([float(timestamp).hex(), str(state)], separators=(",", ":")).encode())
+        digest.update(b"\n")
+    return digest.hexdigest()
 
 
 class HistoryVerificationError(ValueError):
@@ -62,7 +72,7 @@ def compare_recorded_rows(
 def _compare_recorder(
     recorder: Any, entity_id: str, expected: list[HistoryRow],
     start: float, end: float,
-) -> None:
+) -> str:
     with recorder.get_session() as session:
         metadata_id = session.scalar(
             select(StatesMeta.metadata_id).where(StatesMeta.entity_id == entity_id)
@@ -78,19 +88,21 @@ def _compare_recorder(
             )
             .order_by(States.last_updated_ts, States.state_id)
         ).all()
-    compare_recorded_rows(expected, [(float(ts), str(state)) for ts, state in actual])
+    persisted = [(float(ts), str(state)) for ts, state in actual]
+    compare_recorded_rows(expected, persisted)
+    return state_fingerprint(persisted)
 
 
 async def async_verify_history(
     hass: Any, entity_id: str, rows: list[HistoryRow], start: float, end: float
-) -> tuple[float, float]:
+) -> tuple[float, float, str]:
     """Re-read the live database; a successful import alone is not evidence."""
     verified_start, verified_end, expected = attestation_range(rows, start, end)
     recorder = get_instance(hass)
-    await recorder.async_add_executor_job(
+    fingerprint = await recorder.async_add_executor_job(
         _compare_recorder, recorder, entity_id, expected, verified_start, verified_end
     )
-    return verified_start, verified_end
+    return verified_start, verified_end, fingerprint
 
 
 def normalize_intervals(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -100,6 +112,7 @@ def normalize_intervals(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
         try:
             start, end = float(entry["start"]), float(entry["end"])
             entity = entry["entity_id"]
+            fingerprint = entry["fingerprint"]
         except (KeyError, TypeError, ValueError):
             continue
         if (
@@ -107,28 +120,36 @@ def normalize_intervals(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
             or not math.isfinite(start) or not math.isfinite(end)
             or end <= start or entry.get("source") != "ccu_historian"
             or entry.get("evidence") != "confirmed_query_and_recorder_match"
+            or not isinstance(fingerprint, str) or len(fingerprint) != 64
+            or any(character not in "0123456789abcdef" for character in fingerprint)
         ):
             continue
         valid.append({
             "entity_id": entity, "start": start, "end": end,
             "source": "ccu_historian",
             "evidence": "confirmed_query_and_recorder_match",
+            "fingerprint": fingerprint,
         })
     valid.sort(key=lambda item: (item["entity_id"], item["start"], item["end"]))
     result: list[dict[str, Any]] = []
     for item in valid:
         if (result and result[-1]["entity_id"] == item["entity_id"]
-                and item["start"] <= result[-1]["end"]):
-            result[-1]["end"] = max(result[-1]["end"], item["end"])
-        else:
-            result.append(item)
+                and item["start"] < result[-1]["end"]):
+            # A later exact re-verification replaces the previous attestation.
+            # Other overlapping intervals are rejected rather than combining
+            # fingerprints from potentially different source observations.
+            if item["start"] == result[-1]["start"] and item["end"] == result[-1]["end"]:
+                result[-1] = item
+                continue
+            raise HistoryVerificationError("Overlapping attested intervals")
+        result.append(item)
     if len(result) > MAX_INTERVALS:
         raise HistoryVerificationError("Too many attested historical ranges")
     return result
 
 
 async def async_record_coverage(
-    hass: Any, entity_id: str, start: float, end: float
+    hass: Any, entity_id: str, start: float, end: float, fingerprint: str
 ) -> None:
     """Commit metadata only AFTER source/database verification succeeded."""
     lock: asyncio.Lock = hass.data.setdefault(
@@ -145,6 +166,7 @@ async def async_record_coverage(
                 "entity_id": entity_id, "start": start, "end": end,
                 "source": "ccu_historian",
                 "evidence": "confirmed_query_and_recorder_match",
+                "fingerprint": fingerprint,
             }
         ])
         await store.async_save({"schema": 1, "intervals": intervals})
