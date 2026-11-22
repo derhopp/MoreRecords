@@ -77,8 +77,17 @@ async def async_record_coverage(
         items = previous.get("intervals", []) if isinstance(previous, dict) else []
         if not isinstance(items, list):
             raise HistoryVerificationError("Coverage storage has invalid format")
+        # A fresh full verification supersedes overlapping older proofs.
+        # Do not manufacture coverage for pieces outside the new interval.
+        previous_ranges = normalize_intervals(items)
+        retained = [
+            item for item in previous_ranges
+            if item["entity_id"] != entity_id
+            or item["end"] <= start
+            or item["start"] >= end
+        ]
         intervals = normalize_intervals([
-            *items, {
+            *retained, {
                 "entity_id": entity_id, "start": start, "end": end,
                 "source": "ccu_historian",
                 "evidence": "confirmed_query_and_recorder_match",
