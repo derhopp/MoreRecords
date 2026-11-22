@@ -34,11 +34,17 @@ from .ccu_historian import (
 )
 from .const import DOMAIN
 from .csv_import import CsvImportError, HistoryRow, parse_csv
+from .coverage import (
+    HistoryVerificationError,
+    async_record_coverage,
+    async_verify_history,
+)
 from .export_csv import ExportError, ExportTooLarge, parse_export_window
 from .export_view import signed_export_url
 from .recorder_export import async_export_preview
 from .merge_policy import ImportPlan, plan_prefix, retention_boundary
 from .recorder_import import (
+    ImportOutcome,
     RecorderImportError,
     async_first_state_timestamp,
     async_prepend_states,
@@ -86,6 +92,7 @@ class MoreRecordsOptionsFlow(OptionsFlow):
         self._export_preview: dict[str, str] = {}
         self._rows: list[HistoryRow] = []
         self._plan: ImportPlan | None = None
+        self._historian_range: tuple[float, float] | None = None
         self._preview: dict[str, str] = {}
         self._ccu_url = ""
         self._ccu_api_key = ""
@@ -120,7 +127,7 @@ class MoreRecordsOptionsFlow(OptionsFlow):
         plan = plan_prefix(
             normalized, cutoff, purge_before=purge_before
         )
-        if not plan.eligible:
+        if not plan.eligible and self._source != "ccu_historian":
             if plan.skipped_retention:
                 raise RetentionNoDataError(
                     "No source rows fall between the live Recorder retention "
@@ -142,6 +149,12 @@ class MoreRecordsOptionsFlow(OptionsFlow):
             "skipped_retention": str(plan.skipped_retention),
             "duplicate_rows": "0",
             "conflicting_timestamps": "0",
+            "coverage": (
+                "CCU-Historian: requires a complete-query confirmation and "
+                "exact Recorder verification; no coverage for CSV imports"
+                if self._source == "ccu_historian"
+                else "CSV: no historical continuity is certified"
+            ),
             "retention": (
                 f"auto_purge=true, purge_keep_days={recorder.keep_days}"
                 if recorder.auto_purge else "auto_purge=false"
@@ -471,6 +484,7 @@ class MoreRecordsOptionsFlow(OptionsFlow):
                             rows = await client.async_history(
                                 point.idx, start_ms, end_ms
                             )
+                            self._historian_range = (start_ms / 1000, end_ms / 1000)
                             if not rows:
                                 errors["base"] = "historian_empty"
                             else:
@@ -527,10 +541,16 @@ class MoreRecordsOptionsFlow(OptionsFlow):
             description_placeholders={"diagnostic": diagnostic},
         )
 
+    def _confirm_schema(self) -> vol.Schema:
+        fields = {vol.Required("confirm", default=False): bool}
+        if self._source == "ccu_historian":
+            fields[vol.Required("confirm_complete_history", default=False)] = bool
+        return vol.Schema(fields)
+
     async def async_step_confirm(
         self, user_input: dict[str, Any] | None = None
     ):
-        """Make the explicit write, rechecking all overlapping rows at commit."""
+        """Write eligible states and verify explicit historian continuity."""
         errors: dict[str, str] = {}
         if user_input is not None:
             if not user_input.get("confirm"):
@@ -547,9 +567,40 @@ class MoreRecordsOptionsFlow(OptionsFlow):
                         self._rows,
                         datetime.now(timezone.utc).timestamp(),
                     )
-                    outcome = await async_prepend_states(
-                        self.hass, self._entity_id, self._rows
-                    )
+                    if self._source == "ccu_historian" and not user_input.get(
+                        "confirm_complete_history", False
+                    ):
+                        errors["base"] = "coverage_confirmation_required"
+                        return self.async_show_form(
+                            step_id="confirm",
+                            data_schema=self._confirm_schema(),
+                            errors=errors,
+                            description_placeholders=self._preview,
+                        )
+                    if self._plan is None:
+                        raise RecorderImportError("Import preview has expired")
+                    if self._plan.eligible:
+                        outcome = await async_prepend_states(
+                            self.hass, self._entity_id, self._rows
+                        )
+                    else:
+                        outcome = ImportOutcome(
+                            0, self._plan.skipped_overlap,
+                            self._plan.skipped_retention
+                        )
+                    if self._source == "ccu_historian":
+                        if self._historian_range is None:
+                            raise HistoryVerificationError("Missing Historian query range")
+                        verified_start, verified_end = await async_verify_history(
+                            self.hass, self._entity_id, self._rows,
+                            *self._historian_range,
+                        )
+                        await async_record_coverage(
+                            self.hass, self._entity_id, verified_start, verified_end
+                        )
+                except HistoryVerificationError as err:
+                    _LOGGER.warning("Historian continuity verification rejected: %s", err)
+                    errors["base"] = "coverage_verification_failed"
                 except Exception:
                     _LOGGER.exception("MoreRecords Recorder import failed")
                     errors["base"] = "import_failed"
@@ -572,9 +623,7 @@ class MoreRecordsOptionsFlow(OptionsFlow):
                     )
         return self.async_show_form(
             step_id="confirm",
-            data_schema=vol.Schema(
-                {vol.Required("confirm", default=False): bool}
-            ),
+            data_schema=self._confirm_schema(),
             description_placeholders=self._preview,
             errors=errors,
         )
