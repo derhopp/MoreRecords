@@ -2,7 +2,7 @@
 
 MoreRecords is a **Home Assistant custom integration (development preview)** for importing historical CSV or CCU-Historian observations and **exporting Recorder states to CSV** to an **existing** entity's Recorder history, without changing its current state.
 
-> **Experimental beta — `0.1.0b1` prerelease.** MoreRecords writes to Home Assistant's private Recorder schema. Make a full Home Assistant backup first. Compatibility is not guaranteed across Home Assistant upgrades. Use only in a disposable test instance until you have verified your version.
+> **Experimental beta — `0.1.0b2` prerelease.** MoreRecords writes to Home Assistant's private Recorder schema. Make a full Home Assistant backup first. Compatibility is not guaranteed across Home Assistant upgrades. Use only in a disposable test instance until you have verified your version.
 
 ## Features
 
@@ -42,7 +42,7 @@ MoreRecords is a **Home Assistant custom integration (development preview)** for
 
 1. Open HACS → three-dot menu → **Custom repositories**.
 2. Enter `https://github.com/derhopp/MoreRecords`, choose **Integration**, and add it.
-3. Install the `0.1.0b1` **prerelease** from the custom HACS repository (enable beta/prerelease versions in HACS if necessary). This is not a stable release.
+3. Install the `0.1.0b2` **prerelease** from the custom HACS repository (enable beta/prerelease versions in HACS if necessary). This is not a stable release.
 4. Restart Home Assistant.
 5. Go to **Settings → Devices & services → Add integration** and search for **MoreRecords**.
 6. Open the integration's **Configure** action and choose **Import** or **Export CSV**. There is no separate dashboard panel.
@@ -130,7 +130,7 @@ The import wizard requires an explicit choice for the interval after the final *
 
 If the selected values already agree, no artificial marker is needed. If the import adds only missing values **within** HA's previously recorded interval, there is no leading gap to bridge and this setting does not create a marker. The preview shows the selected rule and any planned synthetic timestamp. A bridge marker is not proof of a real source event, is not replayed as a live event, and cannot certify CCU-Historian continuity. Confirming the import does **not** imply LightAway has verified all source history. The importer recomputes the full decision immediately before writing, aborting if the Recorder has changed since preview.
 
-**Development note:** These changes are committed to `main` after the existing `0.1.0b1` tag; the tagged beta stays unchanged until a later release is explicitly requested.
+**Beta 2 release note:** This exact-timestamp merge and the three operator-selected transition rules are included in `0.1.0b2`; `0.1.0b1` remains available as an older prerelease.
 
 ## Switch and light states versus button press events
 
@@ -161,11 +161,11 @@ python -m pytest -q
 
 GitHub Actions includes parser tests, translation/manifest checks, HACS validation, and Hassfest. The unit tests do not substitute for real Recorder integration testing.
 
-See [Development plan](docs/DEVELOPMENT.md) and [Safety](docs/SAFETY.md). No release is planned until compatibility and data integrity are independently verified.
+See [Development plan](docs/DEVELOPMENT.md) and [Safety](docs/SAFETY.md). No stable release is planned until compatibility and data integrity are independently verified.
 
 ## Beta prerelease
 
-MoreRecords `0.1.0b1` is the first public beta, including the verified CCU-Historian history-coverage work intended to support integrations such as LightAway. See the [0.1.0b1 beta release notes](docs/releases/0.1.0b1.md). The beta remains experimental: make a restorable Home Assistant backup before testing, because the import path writes Home Assistant's private Recorder schema.
+MoreRecords `0.1.0b2` is the second experimental beta. It extends the CCU-Historian and CSV importers with exact-timestamp Recorder merging and explicit user-selectable transition states, while retaining the LightAway-oriented coverage verification introduced in the first beta. See the [0.1.0b2 release notes](docs/releases/0.1.0b2.md) and [0.1.0b1 release notes](docs/releases/0.1.0b1.md). The beta remains experimental: make a restorable Home Assistant backup before testing, because the import path writes Home Assistant's private Recorder schema.
 
 ## License
 
