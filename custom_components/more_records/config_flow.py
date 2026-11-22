@@ -591,12 +591,15 @@ class MoreRecordsOptionsFlow(OptionsFlow):
                     if self._source == "ccu_historian":
                         if self._historian_range is None:
                             raise HistoryVerificationError("Missing Historian query range")
-                        verified_start, verified_end = await async_verify_history(
-                            self.hass, self._entity_id, self._rows,
-                            *self._historian_range,
+                        verified_start, verified_end, fingerprint = (
+                            await async_verify_history(
+                                self.hass, self._entity_id, self._rows,
+                                *self._historian_range,
+                            )
                         )
                         await async_record_coverage(
-                            self.hass, self._entity_id, verified_start, verified_end
+                            self.hass, self._entity_id,
+                            verified_start, verified_end, fingerprint,
                         )
                 except HistoryVerificationError as err:
                     _LOGGER.warning("Historian continuity verification rejected: %s", err)
