@@ -2,7 +2,7 @@
 
 MoreRecords is a **Home Assistant custom integration (development preview)** for importing historical CSV or CCU-Historian observations and **exporting Recorder states to CSV** to an **existing** entity's Recorder history, without changing its current state.
 
-> **Experimental — no release has been published.** MoreRecords writes to Home Assistant's private Recorder schema. Make a full Home Assistant backup first. Compatibility is not guaranteed across Home Assistant upgrades. Use only in a disposable test instance until you have verified your version.
+> **Experimental beta — `0.1.0b1` prerelease.** MoreRecords writes to Home Assistant's private Recorder schema. Make a full Home Assistant backup first. Compatibility is not guaranteed across Home Assistant upgrades. Use only in a disposable test instance until you have verified your version.
 
 ## Features
 
@@ -42,7 +42,7 @@ MoreRecords is a **Home Assistant custom integration (development preview)** for
 
 1. Open HACS → three-dot menu → **Custom repositories**.
 2. Enter `https://github.com/derhopp/MoreRecords`, choose **Integration**, and add it.
-3. Install MoreRecords from its custom repository. **Development only:** no tagged release exists; installation from the default branch depends on the HACS version and available development-version options.
+3. Install the `0.1.0b1` **prerelease** from the custom HACS repository (enable beta/prerelease versions in HACS if necessary). This is not a stable release.
 4. Restart Home Assistant.
 5. Go to **Settings → Devices & services → Add integration** and search for **MoreRecords**.
 6. Open the integration's **Configure** action and choose **Import** or **Export CSV**. There is no separate dashboard panel.
@@ -150,6 +150,10 @@ python -m pytest -q
 GitHub Actions includes parser tests, translation/manifest checks, HACS validation, and Hassfest. The unit tests do not substitute for real Recorder integration testing.
 
 See [Development plan](docs/DEVELOPMENT.md) and [Safety](docs/SAFETY.md). No release is planned until compatibility and data integrity are independently verified.
+
+## Beta prerelease
+
+MoreRecords `0.1.0b1` is the first public beta, including the verified CCU-Historian history-coverage work intended to support integrations such as LightAway. See the [0.1.0b1 beta release notes](docs/releases/0.1.0b1.md). The beta remains experimental: make a restorable Home Assistant backup before testing, because the import path writes Home Assistant's private Recorder schema.
 
 ## License
 

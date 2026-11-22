@@ -14,7 +14,7 @@
 - Both preview and Recorder-thread commit read live settings. The commit re-evaluates the retention cutoff with its own current UTC time.
 - With auto-purge disabled, old states remain eligible regardless of `purge_keep_days`.
 - UI translations: English (default) and German.
-- HACS repository structure, tests and CI; no release or tag.
+- HACS repository structure, tests and CI; first experimental beta prerelease `0.1.0b1`; no stable release.
 
 ## Architecture
 

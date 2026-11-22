@@ -1,0 +1,53 @@
+name: Publish one-time 0.1.0b1 prerelease
+
+# This intentionally publishes only the exact release-preparation commit after
+# the matching CI run succeeds. Future commits cannot republish this version.
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.head_branch == 'main' &&
+      github.event.workflow_run.head_repository.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          persist-credentials: false
+      - name: Publish verified prerelease tag on exact commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TARGET_SHA: ${{ github.event.workflow_run.head_sha }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          if [[ "$(git log -1 --pretty=%s)" != "chore: prepare prerelease 0.1.0b1" ]]; then
+            echo "Not the one-time 0.1.0b1 release preparation commit; skipping."
+            exit 0
+          fi
+          actual_version="$(python -c 'import json; print(json.load(open("custom_components/more_records/manifest.json"))["version"])')"
+          if [[ "$actual_version" != "0.1.0b1" ]]; then
+            echo "Manifest version is $actual_version, expected 0.1.0b1"
+            exit 1
+          fi
+          if gh release view "0.1.0b1" --repo "$REPO" >/dev/null 2>&1; then
+            echo "Pre-release 0.1.0b1 already exists; not changing it."
+            exit 0
+          fi
+          gh release create "0.1.0b1" \
+            --repo "$REPO" \
+            --target "$TARGET_SHA" \
+            --title "MoreRecords 0.1.0b1 (Beta 1)" \
+            --notes-file "docs/releases/0.1.0b1.md" \
+            --prerelease \
+            --latest=false
+          echo "Published prerelease at commit $TARGET_SHA"
