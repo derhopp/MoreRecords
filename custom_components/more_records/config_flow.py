@@ -42,12 +42,13 @@ from .coverage import (
 from .export_csv import ExportError, ExportTooLarge, parse_export_window
 from .export_view import signed_export_url
 from .recorder_export import async_export_preview
-from .merge_policy import ImportPlan, plan_prefix, retention_boundary
+from .history_merge import GAP_MODES, MergePlan
+from .merge_policy import retention_boundary
 from .recorder_import import (
     ImportOutcome,
     RecorderImportError,
-    async_first_state_timestamp,
-    async_prepend_states,
+    async_preview_merge,
+    async_merge_states,
 )
 from .validation import ValidationError, validate_rows
 
@@ -91,7 +92,8 @@ class MoreRecordsOptionsFlow(OptionsFlow):
         self._export_end: float | None = None
         self._export_preview: dict[str, str] = {}
         self._rows: list[HistoryRow] = []
-        self._plan: ImportPlan | None = None
+        self._plan: MergePlan | None = None
+        self._gap_mode = "hold_last"
         self._historian_range: tuple[float, float] | None = None
         self._preview: dict[str, str] = {}
         self._ccu_url = ""
@@ -117,25 +119,20 @@ class MoreRecordsOptionsFlow(OptionsFlow):
         normalized = validate_rows(
             state, rows, datetime.now(timezone.utc).timestamp()
         )
-        cutoff = await async_first_state_timestamp(self.hass, self._entity_id)
-        if cutoff is None:
-            raise RecorderImportError("No existing Recorder state")
         recorder = get_instance(self.hass)
-        purge_before = retention_boundary(
-            recorder.auto_purge, recorder.keep_days, time.time()
-        )
-        plan = plan_prefix(
-            normalized, cutoff, purge_before=purge_before
+        plan = await async_preview_merge(
+            self.hass, self._entity_id, normalized, self._gap_mode
         )
         if not plan.eligible and self._source != "ccu_historian":
             if plan.skipped_retention:
                 raise RetentionNoDataError(
-                    "No source rows fall between the live Recorder retention "
-                    "boundary and the beginning of existing HA history"
+                    "No importable rows inside the live Recorder retention window"
                 )
             raise RecorderImportError(
-                "All source rows overlap existing Recorder history"
+                "All source timestamps already exist in Recorder or are beyond "
+                "its latest existing state"
             )
+        purge_before = plan.purge_before
 
         self._rows = normalized
         self._plan = plan
@@ -145,8 +142,17 @@ class MoreRecordsOptionsFlow(OptionsFlow):
             "total": str(plan.total),
             "importable": str(len(plan.eligible)),
             "skipped": str(plan.skipped),
-            "skipped_overlap": str(plan.skipped_overlap),
+            "skipped_overlap": str(plan.skipped_exact),
             "skipped_retention": str(plan.skipped_retention),
+            "skipped_after_latest": str(plan.skipped_after_latest),
+            "conflicting_existing": str(plan.conflicting_exact),
+            "gap_mode": plan.gap_mode,
+            "gap_marker": (
+                datetime.fromtimestamp(
+                    plan.bridge.timestamp, timezone.utc
+                ).isoformat() + " → " + plan.bridge.value
+                if plan.bridge else "none"
+            ),
             "duplicate_rows": "0",
             "conflicting_timestamps": "0",
             "coverage": (
@@ -169,7 +175,9 @@ class MoreRecordsOptionsFlow(OptionsFlow):
             "last": datetime.fromtimestamp(
                 normalized[-1].timestamp, timezone.utc
             ).isoformat(),
-            "oldest": datetime.fromtimestamp(cutoff, timezone.utc).isoformat(),
+            "oldest": datetime.fromtimestamp(
+                plan.oldest_existing, timezone.utc
+            ).isoformat(),
         }
 
     async def async_step_init(self, user_input: dict[str, Any] | None = None):
@@ -196,6 +204,32 @@ class MoreRecordsOptionsFlow(OptionsFlow):
             errors=errors,
         )
 
+    def _import_schema(self) -> vol.Schema:
+        """Require an explicit operator decision for the leading state gap."""
+        return vol.Schema(
+            {
+                vol.Required("entity_id"): EntitySelector({}),
+                vol.Required("source", default="csv"): SelectSelector(
+                    {
+                        "options": [
+                            {"value": "csv", "label": "CSV"},
+                            {"value": "ccu_historian", "label": "CCU-Historian"},
+                        ],
+                        "mode": "dropdown",
+                    }
+                ),
+                vol.Required("gap_mode"): SelectSelector(
+                    {
+                        "options": [
+                            "hold_last", "oldest_recorder", "unavailable"
+                        ],
+                        "translation_key": "gap_mode",
+                        "mode": "dropdown",
+                    }
+                ),
+            }
+        )
+
     async def async_step_import(self, user_input: dict[str, Any] | None = None):
         """Choose destination and CSV or CCU-Historian import source."""
         errors: dict[str, str] = {}
@@ -209,23 +243,21 @@ class MoreRecordsOptionsFlow(OptionsFlow):
             else:
                 self._entity_id = entity_id
                 self._source = user_input["source"]
+                self._gap_mode = user_input["gap_mode"]
+                if self._gap_mode not in GAP_MODES:
+                    errors["base"] = "invalid_gap_mode"
+                    return self.async_show_form(
+                        step_id="import",
+                        errors=errors,
+                        data_schema=self._import_schema(),
+                    )
                 if self._source == "csv":
                     return await self.async_step_csv()
                 return await self.async_step_historian_connect()
 
         return self.async_show_form(
             step_id="import",
-            data_schema=vol.Schema(
-                {
-                    vol.Required("entity_id"): EntitySelector({}),
-                    vol.Required("source", default="csv"): SelectSelector(
-                        {"options": [
-                            {"value": "csv", "label": "CSV"},
-                            {"value": "ccu_historian", "label": "CCU-Historian"},
-                        ], "mode": "dropdown"}
-                    ),
-                }
-            ),
+            data_schema=self._import_schema(),
             errors=errors,
         )
 
@@ -544,7 +576,7 @@ class MoreRecordsOptionsFlow(OptionsFlow):
     def _confirm_schema(self) -> vol.Schema:
         fields = {vol.Required("confirm", default=False): bool}
         if self._source == "ccu_historian":
-            fields[vol.Required("confirm_complete_history", default=False)] = bool
+            fields[vol.Optional("confirm_complete_history", default=False)] = bool
         return vol.Schema(fields)
 
     async def async_step_confirm(
@@ -567,42 +599,54 @@ class MoreRecordsOptionsFlow(OptionsFlow):
                         self._rows,
                         datetime.now(timezone.utc).timestamp(),
                     )
-                    if self._source == "ccu_historian" and not user_input.get(
-                        "confirm_complete_history", False
-                    ):
-                        errors["base"] = "coverage_confirmation_required"
-                        return self.async_show_form(
-                            step_id="confirm",
-                            data_schema=self._confirm_schema(),
-                            errors=errors,
-                            description_placeholders=self._preview,
-                        )
                     if self._plan is None:
                         raise RecorderImportError("Import preview has expired")
                     if self._plan.eligible:
-                        outcome = await async_prepend_states(
-                            self.hass, self._entity_id, self._rows
+                        outcome = await async_merge_states(
+                            self.hass, self._entity_id, self._rows,
+                            self._gap_mode, self._plan.signature,
                         )
                     else:
                         outcome = ImportOutcome(
-                            0, self._plan.skipped_overlap,
-                            self._plan.skipped_retention
+                            0, self._plan.skipped_exact,
+                            self._plan.skipped_retention,
+                            self._plan.skipped_after_latest,
+                            self._plan.conflicting_exact,
                         )
-                    if self._source == "ccu_historian":
-                        if self._historian_range is None:
-                            raise HistoryVerificationError("Missing Historian query range")
-                        verified_start, verified_end, fingerprint = (
-                            await async_verify_history(
-                                self.hass, self._entity_id, self._rows,
-                                *self._historian_range,
-                            )
-                        )
-                        await async_record_coverage(
-                            self.hass, self._entity_id,
-                            verified_start, verified_end, fingerprint,
-                        )
+                    coverage_status = "not_requested"
+                    if (
+                        self._source == "ccu_historian"
+                        and user_input.get("confirm_complete_history", False)
+                    ):
+                        # Coverage is entirely optional; it is never inferred
+                        # from the import itself. A synthetic transition can
+                        # never qualify as source-verified evidence.
+                        coverage_status = "not_verified"
+                        if self._plan.bridge is None:
+                            try:
+                                if self._historian_range is None:
+                                    raise HistoryVerificationError(
+                                        "Missing Historian query range"
+                                    )
+                                verified_start, verified_end, fingerprint = (
+                                    await async_verify_history(
+                                        self.hass, self._entity_id, self._rows,
+                                        *self._historian_range,
+                                    )
+                                )
+                                await async_record_coverage(
+                                    self.hass, self._entity_id,
+                                    verified_start, verified_end, fingerprint,
+                                )
+                                coverage_status = "verified"
+                            except HistoryVerificationError as err:
+                                _LOGGER.warning(
+                                    "Import completed, but historian coverage "
+                                    "could not be certified for %s: %s",
+                                    self._entity_id, err,
+                                )
                 except HistoryVerificationError as err:
-                    _LOGGER.warning("Historian continuity verification rejected: %s", err)
+                    _LOGGER.warning("Historian verification rejected: %s", err)
                     errors["base"] = "coverage_verification_failed"
                 except Exception:
                     _LOGGER.exception("MoreRecords Recorder import failed")
@@ -621,6 +665,11 @@ class MoreRecordsOptionsFlow(OptionsFlow):
                             "last_skipped": outcome.skipped,
                             "last_skipped_overlap": outcome.skipped_overlap,
                             "last_skipped_retention": outcome.skipped_retention,
+                            "last_skipped_after_latest": outcome.skipped_after_latest,
+                            "last_conflicting_existing": outcome.conflicting_exact,
+                            "last_synthetic_rows": outcome.synthetic_rows,
+                            "last_gap_mode": self._gap_mode,
+                            "last_coverage_status": coverage_status,
                             "last_import_utc": datetime.now(timezone.utc).isoformat(),
                         }
                     )

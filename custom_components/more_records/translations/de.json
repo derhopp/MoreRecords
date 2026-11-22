@@ -21,7 +21,7 @@
       },
       "confirm": {
         "title": "Historischen Import bestätigen",
-        "description": "Ziel: {entity_id}\nQuelle: {source}\nQuellmesswerte: {total}\nNeue historische Werte: {importable}\nÜbersprungen (HA-Verlauf vorhanden): {skipped_overlap}\nÜbersprungen (außerhalb der Aufbewahrung): {skipped_retention}\nÜbersprungene CCU-Historian-Zeilen mit gleichem Zeitstempel: {duplicate_rows}\nWidersprüchliche Zeitstempel (letzter Quellwert übernommen): {conflicting_timestamps}\nRecorder-Einstellung: {retention}\nAufbewahrungsgrenze (UTC): {purge_before}\nQuellbeginn (UTC): {first}\nQuellende (UTC): {last}\nÄltester HA-Eintrag (UTC): {oldest}\n\nEs werden nur Daten innerhalb der aktuellen Recorder-Aufbewahrungsfrist und vor dem ersten HA-Zustand eingefügt. Bei deaktiviertem auto_purge entfällt die zeitliche Grenze. Bei aktiviertem auto_purge werden ältere Werte nicht dauerhaft behalten. Bitte vor Bestätigung Backup prüfen.\\n\\nVerifizierter CCU-Historian-Zeitraum: {coverage}. Nur eine vollständig abgefragte, unveränderte Quelle darf als lückenlos bestätigt werden. CSVs sind davon ausgeschlossen. Die Bestätigung ist nötig; ohne sie wird kein Nachweis erzeugt.",
+        "description": "Ziel: {entity_id}\nQuelle: {source}\nQuellmesswerte: {total}\nFehlende Quellmesswerte zum Einfügen: {importable}\nÜbersprungen (Zeitstempel schon in HA): {skipped_overlap}\nAbweichende Werte bei gleichem Zeitstempel (HA bleibt): {conflicting_existing}\nÜbersprungen (jünger als letzter HA-Zustand): {skipped_after_latest}\nÜbergangsregel für die Lücke: {gap_mode}\nKünstlicher Übergangseintrag (falls nötig): {gap_marker}\nÜbersprungen (außerhalb der Aufbewahrung): {skipped_retention}\nÜbersprungene CCU-Historian-Zeilen mit gleichem Zeitstempel: {duplicate_rows}\nWidersprüchliche Zeitstempel (letzter Quellwert übernommen): {conflicting_timestamps}\nRecorder-Einstellung: {retention}\nAufbewahrungsgrenze (UTC): {purge_before}\nQuellbeginn (UTC): {first}\nQuellende (UTC): {last}\nÄltester HA-Eintrag (UTC): {oldest}\n\nEs werden fehlende Quellzeitstempel innerhalb der vorhandenen HA-Historie und der gültigen Aufbewahrungsfrist ergänzt. Bestehende Recorder-Zeilen haben bei identischem Zeitstempel Vorrang. Die Übergangsregel gilt nur zwischen dem letzten importierten Wert vor dem ersten HA-Eintrag und diesem ersten HA-Eintrag. Ein künstlicher Eintrag zählt nicht als CCU-Historian-Messwert. Bei deaktiviertem auto_purge entfällt die zeitliche Grenze. Bei aktiviertem auto_purge werden ältere Werte nicht dauerhaft behalten. Bitte vor Bestätigung Backup prüfen.\n\nVerifizierter CCU-Historian-Zeitraum: {coverage}. Nur eine vollständig abgefragte, unveränderte Quelle darf als lückenlos bestätigt werden. CSVs sind davon ausgeschlossen. Optional: Die Vollständigkeitsbestätigung nur aktivieren, wenn CCU-Historian tatsächlich alle Zustandswechsel enthält. Der Import funktioniert auch ohne Kontinuitätsnachweis; künstliche Übergangseinträge verhindern eine Zertifizierung.",
         "data": {
           "confirm": "Ich habe ein Backup und möchte die fehlenden Werte importieren",
           "confirm_complete_history": "Ich bestätige, dass CCU-Historian für den gewählten Zeitraum alle Zustandsänderungen des Datenpunkts vollständig gespeichert hat"
@@ -60,10 +60,11 @@
       },
       "import": {
         "title": "Historische Daten importieren",
-        "description": "Wähle eine aufgezeichnete HA-Entität und CSV oder CCU-Historian.",
+        "description": "Wähle eine vorhandene Entität, Datenquelle und die verbindliche Regel für den Übergangszustand. Bestehende Recorder-Zeilen und Zeitstempel bleiben erhalten; ergänzt werden nur fehlende Quellzeitstempel.",
         "data": {
           "entity_id": "Zielentität",
-          "source": "Datenquelle"
+          "source": "Datenquelle",
+          "gap_mode": "Zustand in der Lücke vor dem bestehenden Recorder-Verlauf"
         }
       },
       "export": {
@@ -109,7 +110,17 @@
       "export_too_large": "Mehr als 100.000 Zeilen; bitte Zeitraum verkürzen.",
       "export_failed": "Recorder-Daten konnten nicht gelesen werden. Siehe Protokoll.",
       "coverage_confirmation_required": "Bitte bestätige ausdrücklich die Vollständigkeit der abgefragten Historie.",
-      "coverage_verification_failed": "Recorder-Daten stimmen nicht vollständig mit CCU-Historian überein. Es wurde kein Kontinuitätsnachweis gespeichert. Bereits importierte Zustände können trotzdem vorhanden sein."
+      "coverage_verification_failed": "Der Import kann erfolgreich gewesen sein, doch der CCU-Historian-Verlauf wurde nicht vollständig verifiziert. Importergebnis und Protokoll prüfen; es wurde kein Kontinuitätsnachweis gespeichert.",
+      "invalid_gap_mode": "Bitte eine gültige Regel für den Übergangszustand auswählen."
+    }
+  },
+  "selector": {
+    "gap_mode": {
+      "options": {
+        "hold_last": "Letzten Importzustand beibehalten",
+        "oldest_recorder": "Ältesten Recorder-Zustand übernehmen",
+        "unavailable": "Lücke als nicht verfügbar markieren"
+      }
     }
   }
 }

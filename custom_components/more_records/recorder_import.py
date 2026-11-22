@@ -1,191 +1,254 @@
-"""Atomic Recorder backfill for an existing entity (SQLite only).
+"""Atomic, exact-timestamp Recorder merge for existing entities (SQLite only).
 
-Recorder internals are private and version-sensitive. Run on a test Home
-Assistant installation with a restorable backup before production use.
-Imported points must both precede the first existing state and fall within
-the Recorder retention window if auto_purge is enabled. Source points outside
-these limits are skipped without modifying existing states.
+Existing Recorder state rows are never replaced. The Recorder worker rechecks
+source/target and retention before any insertion, and updates predecessor
+links only when newly inserted rows change the chronological predecessor.
+No historical state_changed events or service calls are emitted.
 """
 
 from __future__ import annotations
 
 import asyncio
 import concurrent.futures
-import time
 from dataclasses import dataclass
+import time
 from typing import Any
 
-from sqlalchemy import insert, select, text, update
+from sqlalchemy import insert, select, text
 
 from homeassistant.components.recorder import get_instance
 from homeassistant.components.recorder.db_schema import States, StatesMeta
 from homeassistant.components.recorder.tasks import RecorderTask
 
 from .csv_import import HistoryRow
-from .merge_policy import plan_prefix, retention_boundary
+from .history_merge import (
+    MAX_MERGE_STATES,
+    GapMode,
+    MergePlan,
+    StoredState,
+    plan_missing,
+    predecessor_updates,
+)
+from .merge_policy import retention_boundary
 
 
 class RecorderImportError(ValueError):
-    """Safety guard or Recorder write failed."""
+    """Unsafe Recorder state merge or database failure."""
 
 
 @dataclass(frozen=True, slots=True)
 class ImportOutcome:
-    """Counts from the committed transaction, not just the earlier preview."""
+    """Actual rows inserted and retained original-history conflicts."""
 
     inserted: int
     skipped_overlap: int
     skipped_retention: int
+    skipped_after_latest: int = 0
+    conflicting_exact: int = 0
+    synthetic_rows: int = 0
 
     @property
     def skipped(self) -> int:
-        """Return all skipped source observations."""
-        return self.skipped_overlap + self.skipped_retention
+        return (
+            self.skipped_overlap + self.skipped_retention
+            + self.skipped_after_latest
+        )
 
 
 def _get_first(
     recorder: Any, entity_id: str
 ) -> tuple[int, float, int | None, int | None] | None:
-    """Return first state ID, timestamp, predecessor and attributes ID."""
+    """Keep the existing public helper's result form for compatibility."""
     with recorder.get_session() as session:
-        metadata_id = session.scalar(
+        meta_id = session.scalar(
             select(StatesMeta.metadata_id).where(StatesMeta.entity_id == entity_id)
         )
-        if metadata_id is None:
+        if meta_id is None:
             return None
         row = session.execute(
             select(
                 States.state_id, States.last_updated_ts,
                 States.old_state_id, States.attributes_id,
             )
-            .where(States.metadata_id == metadata_id)
+            .where(States.metadata_id == meta_id)
             .where(States.last_updated_ts.is_not(None))
             .order_by(States.last_updated_ts, States.state_id)
             .limit(1)
         ).first()
-        return tuple(row) if row is not None else None
+        return tuple(row) if row else None
 
 
 async def async_first_state_timestamp(hass: Any, entity_id: str) -> float | None:
-    """Return earliest stored state time in a Recorder DB executor."""
+    """Return first stored state timestamp."""
     recorder = get_instance(hass)
-    first = await recorder.async_add_executor_job(_get_first, recorder, entity_id)
-    return first[1] if first else None
+    row = await recorder.async_add_executor_job(_get_first, recorder, entity_id)
+    return row[1] if row else None
 
 
-def _write(recorder: Any, entity_id: str, source_rows: list[HistoryRow]) -> ImportOutcome:
-    """Recheck cutoff and atomically prepend the non-overlapping prefix."""
+def _existing(session: Any, entity_id: str) -> tuple[int, list[StoredState], dict[int, float | None]]:
+    """Read all existing rows, fail closed if too large to verify exactly."""
+    metadata_id = session.scalar(
+        select(StatesMeta.metadata_id).where(StatesMeta.entity_id == entity_id)
+    )
+    if metadata_id is None:
+        raise RecorderImportError("Entity has no Recorder metadata")
+    query = (
+        select(
+            States.state_id, States.last_updated_ts, States.state,
+            States.attributes_id, States.old_state_id, States.last_changed_ts,
+        )
+        .where(States.metadata_id == metadata_id)
+        .where(States.last_updated_ts.is_not(None))
+        .order_by(States.last_updated_ts, States.state_id)
+        .limit(MAX_MERGE_STATES + 1)
+    )
+    data = session.execute(query).all()
+    if not data:
+        raise RecorderImportError("Entity has no stored Recorder states")
+    if len(data) > MAX_MERGE_STATES:
+        raise RecorderImportError(
+            "Too many existing Recorder states for a safe merge"
+        )
+    rows = [
+        StoredState(int(r[0]), float(r[1]), str(r[2]), r[3], r[4])
+        for r in data
+    ]
+    changes = {int(r[0]): r[5] for r in data}
+    return metadata_id, rows, changes
+
+
+def _plan(
+    recorder: Any, entity_id: str, source: list[HistoryRow], mode: GapMode
+) -> MergePlan:
+    """Read-only preview against live Recorder data and retention."""
     if recorder.engine is None or recorder.engine.dialect.name != "sqlite":
         raise RecorderImportError("Only SQLite Recorder databases are supported")
-    if not source_rows:
-        raise RecorderImportError("No data to import")
+    with recorder.get_session() as session:
+        _, existing, _ = _existing(session, entity_id)
+        boundary = retention_boundary(
+            recorder.auto_purge, recorder.keep_days, time.time()
+        )
+        return plan_missing(source, existing, mode, purge_before=boundary)
 
+
+async def async_preview_merge(
+    hass: Any, entity_id: str, source: list[HistoryRow], mode: GapMode
+) -> MergePlan:
+    """Create the preview on a database executor, never on HA's event loop."""
+    recorder = get_instance(hass)
+    return await recorder.async_add_executor_job(
+        _plan, recorder, entity_id, source, mode
+    )
+
+
+def _write(
+    recorder: Any, entity_id: str, source: list[HistoryRow],
+    mode: GapMode, preview_signature: str,
+) -> ImportOutcome:
+    """Recheck preview under a single SQLite writer transaction and merge."""
+    if recorder.engine is None or recorder.engine.dialect.name != "sqlite":
+        raise RecorderImportError("Only SQLite Recorder databases are supported")
     with recorder.get_session() as session:
         try:
-            metadata_id = session.scalar(
-                select(StatesMeta.metadata_id).where(StatesMeta.entity_id == entity_id)
+            metadata_id, existing, changed_ts = _existing(session, entity_id)
+            boundary = retention_boundary(
+                recorder.auto_purge, recorder.keep_days, time.time()
             )
-            if metadata_id is None:
-                raise RecorderImportError("Entity has no Recorder metadata")
-            first = session.execute(
+            plan = plan_missing(source, existing, mode, purge_before=boundary)
+            if plan.signature != preview_signature:
+                raise RecorderImportError(
+                    "Recorder states or import eligibility changed since preview; "
+                    "start a new import to review the new merge plan"
+                )
+            if not plan.eligible:
+                return ImportOutcome(
+                    0, plan.skipped_exact, plan.skipped_retention,
+                    plan.skipped_after_latest, plan.conflicting_exact
+                )
+
+            additions = list(plan.eligible)
+            if plan.bridge is not None:
+                additions.append(plan.bridge)
+                additions.sort(key=lambda r: r.timestamp)
+
+            existing_ids = {row.state_id for row in existing}
+            # Mark synthetic rows explicitly as a separate local plan item,
+            # never as verified CCU-Historian source history.
+            # Compose the chronological state sequence for HA's last_changed
+            # semantics and attribute selection. Original rows are unchanged.
+            timeline: list[tuple[float, int, StoredState | HistoryRow]] = [
+                (s.timestamp, s.state_id, s) for s in existing
+            ]
+            timeline.extend((row.timestamp, -1, row) for row in additions)
+            timeline.sort(key=lambda row: (row[0], row[1]))
+
+            previous_state: str | None = None
+            last_changed: float | None = None
+            attrs = existing[0].attributes_id
+            new_values: list[dict[str, Any]] = []
+            for _, _, item in timeline:
+                if isinstance(item, StoredState):
+                    attrs = item.attributes_id
+                    previous_state = item.value
+                    last_changed = (
+                        float(changed_ts[item.state_id])
+                        if changed_ts[item.state_id] is not None
+                        else item.timestamp
+                    )
+                    continue
+                changed = item.value != previous_state
+                new_values.append({
+                    "metadata_id": metadata_id,
+                    "state": item.value,
+                    "last_updated_ts": item.timestamp,
+                    "last_changed_ts": None if changed else last_changed,
+                    "last_reported_ts": None,
+                    "attributes_id": attrs,
+                    "old_state_id": None,
+                    "origin_idx": 0,
+                })
+                if changed:
+                    last_changed = item.timestamp
+                previous_state = item.value
+
+            for offset in range(0, len(new_values), 5000):
+                session.execute(insert(States), new_values[offset:offset + 5000])
+
+            # Re-read inserted IDs, then relink only new rows and original rows
+            # whose immediately preceding chronological state is now new.
+            merged = session.execute(
                 select(
-                    States.state_id,
-                    States.last_updated_ts,
-                    States.old_state_id,
-                    States.attributes_id,
+                    States.state_id, States.last_updated_ts, States.old_state_id
                 )
                 .where(States.metadata_id == metadata_id)
                 .where(States.last_updated_ts.is_not(None))
                 .order_by(States.last_updated_ts, States.state_id)
-                .limit(1)
-            ).first()
-            if first is None:
-                raise RecorderImportError("Entity has no recorded states")
-            first_id, cutoff, old_id, attrs_id = first
-            if old_id is not None:
+            ).all()
+            updates, inserted_count = predecessor_updates(
+                [(int(row[0]), float(row[1]), row[2]) for row in merged],
+                existing_ids,
+            )
+
+            if inserted_count != len(additions):
                 raise RecorderImportError(
-                    "Earliest state references an unexpected predecessor"
+                    "Recorder changed during merge; refusing partial insertion"
                 )
-
-            # Re-evaluate the live Recorder configuration and current UTC time
-            # inside the write transaction. A long-open preview cannot bypass
-            # auto_purge or import data outside the current retention window.
-            purge_before = retention_boundary(
-                recorder.auto_purge, recorder.keep_days, time.time()
-            )
-            plan = plan_prefix(
-                source_rows, float(cutoff), purge_before=purge_before
-            )
-            if not plan.eligible:
-                return ImportOutcome(
-                    0, plan.skipped_overlap, plan.skipped_retention
+            if updates:
+                session.execute(
+                    text(
+                        "UPDATE states SET old_state_id = :prev_id "
+                        "WHERE state_id = :state_id"
+                    ),
+                    updates,
                 )
-
-            previous_value: str | None = None
-            last_change: float | None = None
-            for offset in range(0, len(plan.eligible), 5000):
-                chunk = []
-                for row in plan.eligible[offset:offset + 5000]:
-                    changed = row.value != previous_value
-                    if changed:
-                        last_change = row.timestamp
-                    chunk.append(
-                        {
-                            "metadata_id": metadata_id,
-                            "state": row.value,
-                            "last_updated_ts": row.timestamp,
-                            "last_changed_ts": None if changed else last_change,
-                            "last_reported_ts": None,
-                            "attributes_id": attrs_id,
-                            "old_state_id": None,
-                            "origin_idx": 0,
-                        }
-                    )
-                    previous_value = row.value
-                session.execute(insert(States), chunk)
-
-            session.execute(
-                text(
-                    """
-                    WITH predecessors AS (
-                        SELECT state_id,
-                               LAG(state_id) OVER (
-                                   ORDER BY last_updated_ts, state_id
-                               ) AS prev_id
-                        FROM states
-                        WHERE metadata_id = :metadata_id
-                          AND last_updated_ts < :cutoff
-                    )
-                    UPDATE states
-                    SET old_state_id = (
-                        SELECT prev_id FROM predecessors
-                        WHERE predecessors.state_id = states.state_id
-                    )
-                    WHERE state_id IN (SELECT state_id FROM predecessors)
-                    """
-                ),
-                {"metadata_id": metadata_id, "cutoff": cutoff},
-            )
-            last_inserted = session.scalar(
-                select(States.state_id)
-                .where(States.metadata_id == metadata_id)
-                .where(States.last_updated_ts < cutoff)
-                .order_by(States.last_updated_ts.desc(), States.state_id.desc())
-                .limit(1)
-            )
-            if last_inserted is None:
-                raise RecorderImportError("No states were inserted")
-            updated = session.execute(
-                update(States)
-                .where(States.state_id == first_id)
-                .where(States.old_state_id.is_(None))
-                .values(old_state_id=last_inserted)
-            )
-            if updated.rowcount != 1:
-                raise RecorderImportError("First existing state changed during import")
             session.commit()
             return ImportOutcome(
-                len(plan.eligible), plan.skipped_overlap, plan.skipped_retention
+                len(plan.eligible),
+                plan.skipped_exact,
+                plan.skipped_retention,
+                plan.skipped_after_latest,
+                plan.conflicting_exact,
+                int(plan.bridge is not None),
             )
         except Exception:
             session.rollback()
@@ -193,26 +256,33 @@ def _write(recorder: Any, entity_id: str, source_rows: list[HistoryRow]) -> Impo
 
 
 @dataclass(slots=True)
-class _PrependTask(RecorderTask):
-    """Write via Recorder's own task queue and SQLite writer connection."""
+class _MergeTask(RecorderTask):
+    """Perform a merge on the Recorder's serialized writer thread."""
 
     done: concurrent.futures.Future[ImportOutcome]
     entity_id: str
-    rows: list[HistoryRow]
+    source: list[HistoryRow]
+    mode: GapMode
+    preview_signature: str
 
     def run(self, instance: Any) -> None:
-        """Propagate completion/errors to the user-facing options flow."""
         try:
-            self.done.set_result(_write(instance, self.entity_id, self.rows))
+            self.done.set_result(
+                _write(instance, self.entity_id, self.source,
+                       self.mode, self.preview_signature)
+            )
         except Exception as err:
             self.done.set_exception(err)
 
 
-async def async_prepend_states(
-    hass: Any, entity_id: str, rows: list[HistoryRow]
+async def async_merge_states(
+    hass: Any, entity_id: str, source: list[HistoryRow],
+    mode: GapMode, preview_signature: str,
 ) -> ImportOutcome:
-    """Import eligible prefix states, skipping overlaps and auto-purge-expired rows."""
+    """Merge missing timestamps and optionally bridge the leading gap."""
     recorder = get_instance(hass)
     future: concurrent.futures.Future[ImportOutcome] = concurrent.futures.Future()
-    recorder.queue_task(_PrependTask(future, entity_id, rows))
+    recorder.queue_task(
+        _MergeTask(future, entity_id, source, mode, preview_signature)
+    )
     return await asyncio.wrap_future(future)

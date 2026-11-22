@@ -21,7 +21,7 @@
       },
       "confirm": {
         "title": "Confirm historical import",
-        "description": "Target: {entity_id}\nSource: {source}\nSource rows: {total}\nNew historical rows: {importable}\nSkipped (existing HA history): {skipped_overlap}\nSkipped (outside Recorder retention): {skipped_retention}\nCCU-Historian duplicate rows dropped: {duplicate_rows}\nConflicting timestamps resolved (last source value kept): {conflicting_timestamps}\nRecorder configuration: {retention}\nRetention cutoff (UTC): {purge_before}\nSource start (UTC): {first}\nSource end (UTC): {last}\nEarliest existing HA state (UTC): {oldest}\n\nOnly source data within the current Recorder retention window and before the first existing HA state will be imported. If automatic purging is disabled, no retention cutoff applies. Older data will not be kept with auto_purge enabled. Verify your backup before confirming.\\n\\nVerified CCU-Historian coverage: {coverage}. Only a complete, unchanged source query can be attested as continuous. CSV sources are excluded. This extra confirmation is required before an attestation can be recorded.",
+        "description": "Target: {entity_id}\nSource: {source}\nSource rows: {total}\nMissing source points to add: {importable}\nSkipped (same timestamp already in HA): {skipped_overlap}\nConflicts at an existing timestamp (HA wins): {conflicting_existing}\nSkipped (newer than latest HA state): {skipped_after_latest}\nGap transition policy: {gap_mode}\nSynthetic gap marker (if required): {gap_marker}\nSkipped (outside Recorder retention): {skipped_retention}\nCCU-Historian duplicate rows dropped: {duplicate_rows}\nConflicting timestamps resolved (last source value kept): {conflicting_timestamps}\nRecorder configuration: {retention}\nRetention cutoff (UTC): {purge_before}\nSource start (UTC): {first}\nSource end (UTC): {last}\nEarliest existing HA state (UTC): {oldest}\n\nSource measurements with missing timestamps within the existing HA history range and above the retention cutoff will be added. Existing Recorder rows are authoritative at exact timestamp conflicts. The gap policy applies only between the final imported prefix state and the first existing Recorder state; an artificial gap marker is not evidence of a CCU-Historian observation. If automatic purging is disabled, no retention cutoff applies. Older data will not be kept with auto_purge enabled. Verify your backup before confirming.\n\nVerified CCU-Historian coverage: {coverage}. Only a complete, unchanged source query can be attested as continuous. CSV sources are excluded. Optional: select the complete-source confirmation only when the CCU-Historian series is genuinely complete. An import can proceed without requesting certification; synthetic transition markers prevent certification.",
         "data": {
           "confirm": "I have a backup and want to import the missing rows",
           "confirm_complete_history": "I confirm CCU-Historian has retained every state change for this datapoint throughout the selected query period"
@@ -60,10 +60,11 @@
       },
       "import": {
         "title": "Import historical data",
-        "description": "Select any recorded HA entity and choose CSV or CCU-Historian.",
+        "description": "Choose an existing entity, source and the required transition-state policy. Existing Recorder state rows and their exact timestamps are preserved. Only missing source timestamps are added.",
         "data": {
           "entity_id": "Target entity",
-          "source": "Import source"
+          "source": "Import source",
+          "gap_mode": "State in the gap before existing Recorder history"
         }
       },
       "export": {
@@ -109,7 +110,17 @@
       "export_too_large": "More than 100,000 rows; choose a shorter interval.",
       "export_failed": "Could not read Recorder data. See the logs.",
       "coverage_confirmation_required": "Explicitly confirm that the CCU-Historian query is complete.",
-      "coverage_verification_failed": "Recorder values do not fully match CCU-Historian. No continuity evidence was saved. Already imported history may still be present."
+      "coverage_verification_failed": "The import may have succeeded, but verified CCU-Historian history could not be certified. Check the import result and log; no continuity evidence was saved.",
+      "invalid_gap_mode": "Choose a valid state for the gap after imported history."
+    }
+  },
+  "selector": {
+    "gap_mode": {
+      "options": {
+        "hold_last": "Hold last state of import",
+        "oldest_recorder": "Use oldest state of Recorder",
+        "unavailable": "Mark gap unavailable"
+      }
     }
   }
 }

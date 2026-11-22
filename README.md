@@ -15,8 +15,8 @@ MoreRecords is a **Home Assistant custom integration (development preview)** for
 - Parse ISO-8601/Unix timestamps and local European timestamps, respecting the Home Assistant time zone.
 - Validate source state compatibility and reject ambiguous daylight-saving times, duplicate timestamps, non-finite numeric values, and invalid on/off or selectable states.
 - Show a row-count/time-range confirmation screen; no import occurs without explicit confirmation.
-- Prepend full-resolution states on the Recorder thread, within a SQLite transaction; leave current entity state unchanged.
-- **Ignore overlap**: any source timestamps already within the existing HA Recorder history range are skipped. Only source rows strictly before the first HA state are inserted, even if the timestamp itself is not present in HA.
+- Merge missing full-resolution source state timestamps through the Recorder writer thread in one SQLite transaction; existing state values, attributes and current HA state are preserved.
+- **Exact timestamp merge**: existing HA states are authoritative; source rows at different timestamps can fill the already recorded interval. Values at exactly matching timestamps are skipped (and conflicting values counted), and source points after the newest stored HA state are not appended.
 - **Respect automatic Recorder purging**: if enabled, skip source points older than the live `purge_keep_days` cutoff; if disabled, importing older history is unrestricted by retention.
 - English and German configuration flows follow Home Assistant's language selection.
 
@@ -114,11 +114,23 @@ CCU-Historian runs on the configured Home Assistant network. For API-key-protect
 ## Import workflow
 
 1. Choose an entity and upload the CSV.
-2. MoreRecords validates the CSV or CCU-Historian data and compares its timestamps with the first recorded state of the entity. **Only rows strictly older than the first HA state are eligible**. Other source rows are ignored as overlapping the existing HA Recorder time range.
-3. Review the entity, total source row count, eligible import count, skipped-overlap count, skipped-retention count, current auto-purge setting and cutoff, source time range, and earliest existing HA timestamp.
+2. MoreRecords validates source states and compares their exact timestamps with stored Recorder states. Missing source timestamps in the existing Recorder window are eligible; existing timestamps win over any different source value. Source values beyond the latest HA state are not inserted.
+3. Review the selected gap transition rule, source count, missing timestamps to insert, exact-timestamp conflicts, retention skips, newer-than-HA skips, and the resulting artificial marker, if any.
 4. Explicitly confirm. The internal Recorder task performs an atomic SQLite prepend. The wizard reports the row count on success.
 
-Repeating the same source import produces no new rows (already covered values are skipped; if all are covered, the import wizard declines to proceed). Existing Recorder rows are not overwritten. The importer does not create statistics or write into the current in-memory entity state.
+Repeating a source import generally produces no new rows (all matching timestamps are skipped). Existing Recorder values and attributes are not overwritten, even when the source disagrees; the disagreement is counted separately. The importer does not create statistics or write into the current in-memory entity state.
+
+## Transition state between imported history and the first Recorder row
+
+The import wizard requires an explicit choice for the interval after the final **newly imported source observation before the first existing Recorder state** and before that existing state. Options:
+
+- **Hold last state of import** (`hold_last`): Home Assistant keeps the last imported source state until the original first Recorder state begins. This is a continuation assumption, not another measurement.
+- **Use oldest state of Recorder** (`oldest_recorder`): create a synthetic transition one microsecond after the last imported prefix observation to the value of the first original Recorder state. The original Recorder state and timestamp remain unchanged.
+- **Mark gap unavailable** (`unavailable`): create a synthetic transition one microsecond after the last imported prefix observation to `unavailable`; the first original Recorder state still ends the gap at its stored timestamp.
+
+If the selected values already agree, no artificial marker is needed. If the import adds only missing values **within** HA's previously recorded interval, there is no leading gap to bridge and this setting does not create a marker. The preview shows the selected rule and any planned synthetic timestamp. A bridge marker is not proof of a real source event, is not replayed as a live event, and cannot certify CCU-Historian continuity. Confirming the import does **not** imply LightAway has verified all source history. The importer recomputes the full decision immediately before writing, aborting if the Recorder has changed since preview.
+
+**Development note:** These changes are committed to `main` after the existing `0.1.0b1` tag; the tagged beta stays unchanged until a later release is explicitly requested.
 
 ## Switch and light states versus button press events
 
@@ -136,7 +148,7 @@ A presence simulator such as LightAway benefits from imported history **only if 
 - Boolean state mapping (`true`/`false`, `1`/`0` to `on`/`off`) is applied only to canonical on/off domains; arbitrary Homematic button-press enumerations are never converted into light/switch states.
 - Generic textual states are supported but this does not guarantee complete semantics for every Home Assistant domain. For example, historical `light` brightness/color attributes and button event details cannot be reconstructed from only timestamps and state values.
 - Full-resolution Recorder states are separate from long-term statistics. MoreRecords does not import or rebuild historical long-term statistics.
-- Prepending is intentionally limited to the time **before** the first recorded state. Source measurements within the existing HA history range are silently skipped, even when HA has no row at an exact source timestamp. Filling gaps within this existing range, overriding existing data and undoing completed imports are not supported.
+- Newer development commits on `main` can fill missing exact timestamps **inside** the stored HA history. Original Recorder rows always win when timestamps coincide. Source records after the latest stored HA state are intentionally skipped to avoid altering the live timeline. Undoing completed imports remains unsupported.
 - An import runs synchronously on the Recorder queue. Very large CSV files may delay other recorded events. Keep imports small and inspect logs.
 - Recorder `auto_purge: false` prevents automatic cleanup of **all** entities, not just imported ones. If auto-purge is enabled, the integration filters out states already past the rolling retention boundary. Home Assistant may remove imported states later as the window advances, including during the next scheduled purge.
 

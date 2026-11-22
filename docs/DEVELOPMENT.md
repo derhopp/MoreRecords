@@ -10,7 +10,7 @@
 - Any existing entity with SQLite Recorder history can be selected; domain-aware state validation normalizes canonical on/off domains (`light`, `switch`, etc.), numeric states and selectable options. Textual states are accepted for other domains without implying event replay.
 - Dry-run validation and preview precede explicit confirmation.
 - The destination's current Home Assistant state is never changed.
-- The importer ignores source rows whose timestamps are on or after the earliest existing HA state, **and** if auto-purge is enabled ignores states older than `utcnow - purge_keep_days`; no replacements or gap filling within HA-covered time.
+- The importer compares source timestamps to actual per-entity Recorder states. It preserves all original state values and attributes; skips exact timestamps or points after the latest HA state, and can insert missing points inside the covered interval. Automatic purge still filters states older than `utcnow - purge_keep_days`.
 - Both preview and Recorder-thread commit read live settings. The commit re-evaluates the retention cutoff with its own current UTC time.
 - With auto-purge disabled, old states remain eligible regardless of `purge_keep_days`.
 - UI translations: English (default) and German.
@@ -24,7 +24,8 @@
 
 - `csv_import.py`: CSV format, timestamp and DST parsing, ordering and duplicate detection.
 - `ccu_historian.py`: read-only datapoint listing, name/parameter searching, raw series fetching in bounded windows and value/time validation.
-- `merge_policy.py`: shared preview/write filtering for time-range overlaps and Recorder auto-purge retention boundaries.
+- `history_merge.py`: pure exact-timestamp merge planning, explicit prefix-gap state policies, and stable preview fingerprints.
+- `merge_policy.py`: shared Recorder auto-purge retention boundaries and legacy prefix-only policy helpers.
 - `validation.py`: general domain-aware state validation for binary, numeric, enumerated and text-based entities; `light` and `switch` on/off transitions are supported.
 - `config_flow.py`: user setup + options flow, FileSelector and confirmation UI.
 - `recorder_import.py`: RecorderTask in the Recorder queue, with cutoff re-check in the transaction.
@@ -41,7 +42,8 @@
 - [ ] Live-test `light`/`switch` Boolean state backfill and confirm that historical actions are not replayed as events.
 - [ ] Confirm `event` and `button` entity limitations and whether LightAway queries history or live events.
 - [ ] Verify the CCU-Historian JSON-RPC API with a live instance, including keyword-protected endpoints, names with umlauts, and the `getDataPoint` list response.
-- [ ] Confirm partially overlapping CSV and Historian ranges ignore only their Recorder-covered suffix; no existing rows are changed.
+- [ ] Confirm exact timestamp merge adds missing source records within already covered Recorder intervals, skipping original timestamp conflicts while protecting originals.
+- [ ] Verify all three gap modes, bridge marker timing, preview/write fingerprint race prevention, and recorder `old_state_id` chain integrity.
 - [ ] Confirm auto_purge enabled/disabled and multiple purge_keep_days values against actual Recorder configuration, especially import near the nightly purge boundary.
 - [ ] Confirm CSV preview counts for expired rows, and CCU-Historian fetches start at the retention cutoff when enabled.
 - [ ] Confirm current entity state, device registry and attributes are untouched.
@@ -54,7 +56,7 @@
 
 ## Out of scope (initial version)
 
-Recurring imports, merging gaps, automatic unit conversion, textual sensors, non-SQLite databases, import undo, and automatic long-term statistics generation.
+Recurring imports, interpolation of missing measurements, automatic unit conversion, non-SQLite imports, import undo, and automatic long-term statistics generation.
 
 ## CCU-Historian connection diagnostics
 
@@ -67,3 +69,7 @@ The `historian_point` step logs the full exception reason (bounded) with datapoi
 ## Collision resolution for CCU-Historian raw history
 
 The `getTimeSeriesRaw` arrays preserve source order. If multiple source observations have the exact same timestamp, the last observation wins; stable timestamp sorting retains this order. Log and display the number of dropped duplicate rows and the number of timestamps with conflicting values. Do not synthesize microsecond offsets, because that introduces timestamps never recorded by the source. CSV upload retains strict timestamp uniqueness. Tests cover the actual timestamps in a user-provided CCU-Historian CSV.
+
+## Transition policies and LightAway evidence
+
+An import must explicitly select `hold_last`, `oldest_recorder`, or `unavailable`. Only the gap from the last newly imported prefix sample to the FIRST original Recorder state is bridged; no silent synthetic interpolation occurs in internal intervals. The last two modes may add a synthetic marker 1 microsecond after the last prefix sample. Synthetic observations are not CCU-Historian source rows and cannot justify attested continuity. A failed exact verification must never roll back the user-facing success status of an already committed import, nor create a false continuity certificate. All Recorder mutations must be checked against the current stored snapshot inside the writer transaction.
