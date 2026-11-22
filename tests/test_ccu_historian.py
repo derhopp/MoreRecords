@@ -111,10 +111,53 @@ def test_reject_mismatched_arrays():
 
 
 def test_raw_duplicate_exact_vs_conflicting():
+    """At equal timestamps use the final source state, not a fatal error."""
     from custom_components.more_records.csv_import import HistoryRow
-    assert len(sort_unique([HistoryRow(1, "a"), HistoryRow(1, "a")])) == 1
-    with pytest.raises(HistorianError, match="Conflicting"):
-        sort_unique([HistoryRow(1, "a"), HistoryRow(1, "b")])
+    from custom_components.more_records.ccu_historian import (
+        resolve_duplicate_timestamps,
+    )
+
+    same, duplicate_count, conflicts = resolve_duplicate_timestamps(
+        [HistoryRow(1, "a"), HistoryRow(1, "a")]
+    )
+    assert same == [HistoryRow(1, "a")]
+    assert duplicate_count == 1
+    assert conflicts == set()
+
+    conflicting, duplicate_count, conflicts = resolve_duplicate_timestamps(
+        [HistoryRow(1, "off"), HistoryRow(1, "on")]
+    )
+    assert conflicting == [HistoryRow(1, "on")]
+    assert duplicate_count == 1
+    assert conflicts == {1}
+    assert sort_unique([HistoryRow(1, "off"), HistoryRow(1, "on")]) == [
+        HistoryRow(1, "on")
+    ]
+
+
+def test_collision_examples_from_bad_spots_manual_export():
+    """Keep final on states at actual CCU-Historian duplicate milliseconds."""
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    from custom_components.more_records.csv_import import HistoryRow
+    from custom_components.more_records.ccu_historian import (
+        resolve_duplicate_timestamps,
+    )
+
+    tz = ZoneInfo("Europe/Berlin")
+    ts_2023 = datetime(2023, 12, 25, 18, 1, 24, 117000, tzinfo=tz).timestamp()
+    ts_2025 = datetime(2025, 11, 7, 22, 44, 45, 265000, tzinfo=tz).timestamp()
+    rows = [
+        HistoryRow(ts_2025, "0"),
+        HistoryRow(ts_2023, "0"),
+        HistoryRow(ts_2023, "1"),
+        HistoryRow(ts_2025, "1"),
+    ]
+    unique, duplicates, conflicts = resolve_duplicate_timestamps(rows)
+    assert [row.value for row in unique] == ["1", "1"]
+    assert duplicates == 2
+    assert conflicts == {ts_2023, ts_2025}
+    assert unique[0].timestamp < unique[1].timestamp
 
 
 def test_local_day_includes_dst_offset():

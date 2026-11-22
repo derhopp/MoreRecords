@@ -35,3 +35,7 @@ State attributes for imported rows are shared with the earliest stored existing 
 ## Support diagnostics
 
 Record the Home Assistant Core version, integration version, entity ID, CSV row count, and exact error messages. Never attach your entire Recorder database or unredacted CSV containing private device information to a public GitHub issue.
+
+## CCU-Historian timestamp collisions
+
+When the CCU-Historian API returns multiple values at the same timestamp, the direct importer preserves the final source observation and drops earlier values at that exact instant. The preview and logs report collision counts. This can lose instantaneous intermediate events, but avoids fabricated timestamps; review conflicts if exact switching sequence matters.

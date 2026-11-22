@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 import json
 import math
+import logging
 from urllib.parse import urlencode, urlsplit, urlunsplit
 from zoneinfo import ZoneInfo
 
@@ -22,6 +23,7 @@ from .const import MAX_IMPORT_ROWS
 from .csv_import import HistoryRow
 
 MAX_RESPONSE_BYTES = 32 * 1024 * 1024
+_LOGGER = logging.getLogger(__name__)
 HTTP_READ_CHUNK_BYTES = 64 * 1024
 MAX_POINT_OPTIONS = 100
 WINDOW_DAYS = 31
@@ -184,17 +186,34 @@ def parse_raw_response(payload: object) -> list[HistoryRow]:
     return rows
 
 
-def sort_unique(rows: list[HistoryRow]) -> list[HistoryRow]:
-    """Deduplicate exact repeats; reject conflicting equal timestamps."""
-    rows.sort(key=lambda row: row.timestamp)
+def resolve_duplicate_timestamps(
+    rows: list[HistoryRow],
+) -> tuple[list[HistoryRow], int, set[float]]:
+    """Keep the last source state for each identical millisecond timestamp.
+
+    A stable timestamp sort preserves CCU-Historian's order for tied samples.
+    For a single point in time HA can represent only one unambiguous state in
+    the import series. Retaining the last observation preserves the state
+    *after* an instantaneous off/on transition, without inventing timing.
+    """
+    rows.sort(key=lambda row: row.timestamp)  # Python sorting is stable.
     unique: list[HistoryRow] = []
+    duplicate_rows = 0
+    conflicting_timestamps: set[float] = set()
     for row in rows:
         if unique and row.timestamp == unique[-1].timestamp:
-            if row.value != unique[-1].value:
-                raise HistorianError("Conflicting values for one Historian timestamp")
-            continue
-        unique.append(row)
-    return unique
+            duplicate_rows += 1
+            if unique[-1].value != row.value:
+                conflicting_timestamps.add(row.timestamp)
+            unique[-1] = row
+        else:
+            unique.append(row)
+    return unique, duplicate_rows, conflicting_timestamps
+
+
+def sort_unique(rows: list[HistoryRow]) -> list[HistoryRow]:
+    """Compatibility wrapper returning last-in-source-order deduplicated rows."""
+    return resolve_duplicate_timestamps(rows)[0]
 
 
 async def read_response_complete(response: object, limit: int = MAX_RESPONSE_BYTES) -> bytes:
@@ -222,6 +241,8 @@ class HistorianClient:
     def __init__(self, session: object, base_url: str, api_key: str = ""):
         self._session = session
         self._url = rpc_url(base_url, api_key)
+        self.duplicate_rows = 0
+        self.conflicting_timestamps = 0
 
     async def _rpc(self, method: str, parameters: list[object]) -> object:
         """Issue a bounded, non-redirecting JSON-RPC POST."""
@@ -292,4 +313,24 @@ class HistorianClient:
                     f"More than {MAX_IMPORT_ROWS} rows; narrow the date range"
                 )
             rows.extend(new_rows)
-        return sort_unique(rows)
+        unique, duplicates, conflicts = resolve_duplicate_timestamps(rows)
+        self.duplicate_rows = duplicates
+        self.conflicting_timestamps = len(conflicts)
+        if conflicts:
+            examples = ", ".join(
+                datetime.fromtimestamp(ts, timezone.utc).isoformat()
+                for ts in sorted(conflicts)[:3]
+            )
+            _LOGGER.warning(
+                "CCU-Historian datapoint %s: %s duplicate rows at identical "
+                "timestamps (%s with conflicting values); using the final "
+                "state in source order for each timestamp; examples UTC: %s",
+                point_id, duplicates, len(conflicts), examples,
+            )
+        elif duplicates:
+            _LOGGER.info(
+                "CCU-Historian datapoint %s: removed %s identical "
+                "duplicate timestamp rows",
+                point_id, duplicates,
+            )
+        return unique

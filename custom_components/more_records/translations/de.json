@@ -21,7 +21,7 @@
       },
       "confirm": {
         "title": "Historischen Import bestätigen",
-        "description": "Ziel: {entity_id}\nQuelle: {source}\nQuellmesswerte: {total}\nNeue historische Werte: {importable}\nÜbersprungen (HA-Verlauf vorhanden): {skipped_overlap}\nÜbersprungen (außerhalb der Aufbewahrung): {skipped_retention}\nRecorder-Einstellung: {retention}\nAufbewahrungsgrenze (UTC): {purge_before}\nQuellbeginn (UTC): {first}\nQuellende (UTC): {last}\nÄltester HA-Eintrag (UTC): {oldest}\n\nEs werden nur Daten innerhalb der aktuellen Recorder-Aufbewahrungsfrist und vor dem ersten HA-Zustand eingefügt. Bei deaktiviertem auto_purge entfällt die zeitliche Grenze. Bei aktiviertem auto_purge werden ältere Werte nicht dauerhaft behalten. Bitte vor Bestätigung Backup prüfen.",
+        "description": "Ziel: {entity_id}\nQuelle: {source}\nQuellmesswerte: {total}\nNeue historische Werte: {importable}\nÜbersprungen (HA-Verlauf vorhanden): {skipped_overlap}\nÜbersprungen (außerhalb der Aufbewahrung): {skipped_retention}\nÜbersprungene CCU-Historian-Zeilen mit gleichem Zeitstempel: {duplicate_rows}\nWidersprüchliche Zeitstempel (letzter Quellwert übernommen): {conflicting_timestamps}\nRecorder-Einstellung: {retention}\nAufbewahrungsgrenze (UTC): {purge_before}\nQuellbeginn (UTC): {first}\nQuellende (UTC): {last}\nÄltester HA-Eintrag (UTC): {oldest}\n\nEs werden nur Daten innerhalb der aktuellen Recorder-Aufbewahrungsfrist und vor dem ersten HA-Zustand eingefügt. Bei deaktiviertem auto_purge entfällt die zeitliche Grenze. Bei aktiviertem auto_purge werden ältere Werte nicht dauerhaft behalten. Bitte vor Bestätigung Backup prüfen.",
         "data": {
           "confirm": "Ich habe ein Backup und möchte die fehlenden Werte importieren"
         }
@@ -50,7 +50,7 @@
       },
       "historian_point": {
         "title": "Datenpunkt und Zeitraum wählen",
-        "description": "Wähle Datenpunkt und Zeitraum. Bei aktiviertem auto_purge ruft MoreRecords nur Werte innerhalb der eingestellten Aufbewahrungsfrist ab. Bestehende HA-Verläufe werden nicht überschrieben.\n\nLetzter Datenprüfungsfehler: {diagnostic}",
+        "description": "Wähle Datenpunkt und Zeitraum. Bei aktiviertem auto_purge ruft MoreRecords nur Werte innerhalb der eingestellten Aufbewahrungsfrist ab. Bestehende HA-Verläufe werden nicht überschrieben.\n\nLetzter Datenprüfungsfehler: {diagnostic}\n\nLiefert CCU-Historian verschiedene Werte mit identischem Zeitstempel, behält MoreRecords den letzten Quellwert. Die Anzahl der Konflikte wird vor Bestätigung angezeigt.",
         "data": {
           "point_id": "CCU-Historian-Datenpunkt",
           "start_date": "Erster Tag",

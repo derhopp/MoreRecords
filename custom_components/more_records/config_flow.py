@@ -140,6 +140,8 @@ class MoreRecordsOptionsFlow(OptionsFlow):
             "skipped": str(plan.skipped),
             "skipped_overlap": str(plan.skipped_overlap),
             "skipped_retention": str(plan.skipped_retention),
+            "duplicate_rows": "0",
+            "conflicting_timestamps": "0",
             "retention": (
                 f"auto_purge=true, purge_keep_days={recorder.keep_days}"
                 if recorder.auto_purge else "auto_purge=false"
@@ -474,6 +476,12 @@ class MoreRecordsOptionsFlow(OptionsFlow):
                             else:
                                 await self._prepare(
                                     rows, f"CCU-Historian: {point.label}"
+                                )
+                                self._preview["duplicate_rows"] = str(
+                                    client.duplicate_rows
+                                )
+                                self._preview["conflicting_timestamps"] = str(
+                                    client.conflicting_timestamps
                                 )
                                 return await self.async_step_confirm()
                 except RetentionNoDataError as err:

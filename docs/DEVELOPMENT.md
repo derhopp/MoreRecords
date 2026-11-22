@@ -63,3 +63,7 @@ The JSON-RPC `getDataPoint` request without parameters lists all archived datapo
 ## CCU-Historian value validation diagnostics
 
 The `historian_point` step logs the full exception reason (bounded) with datapoint ID and target entity ID, and renders the reason using translated `description_placeholders`. Historian Boolean values sometimes arrive as `0.0`/`1.0`; these forms are mapped only for binary-state domains. Never coerce arbitrary numbers into on/off states. Tests assert both normalized cases and rejection of non-Boolean values. Validation does not write any historical states.
+
+## Collision resolution for CCU-Historian raw history
+
+The `getTimeSeriesRaw` arrays preserve source order. If multiple source observations have the exact same timestamp, the last observation wins; stable timestamp sorting retains this order. Log and display the number of dropped duplicate rows and the number of timestamps with conflicting values. Do not synthesize microsecond offsets, because that introduces timestamps never recorded by the source. CSV upload retains strict timestamp uniqueness. Tests cover the actual timestamps in a user-provided CCU-Historian CSV.

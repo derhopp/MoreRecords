@@ -21,7 +21,7 @@
       },
       "confirm": {
         "title": "Confirm historical import",
-        "description": "Target: {entity_id}\nSource: {source}\nSource rows: {total}\nNew historical rows: {importable}\nSkipped (existing HA history): {skipped_overlap}\nSkipped (outside Recorder retention): {skipped_retention}\nRecorder configuration: {retention}\nRetention cutoff (UTC): {purge_before}\nSource start (UTC): {first}\nSource end (UTC): {last}\nEarliest existing HA state (UTC): {oldest}\n\nOnly source data within the current Recorder retention window and before the first existing HA state will be imported. If automatic purging is disabled, no retention cutoff applies. Older data will not be kept with auto_purge enabled. Verify your backup before confirming.",
+        "description": "Target: {entity_id}\nSource: {source}\nSource rows: {total}\nNew historical rows: {importable}\nSkipped (existing HA history): {skipped_overlap}\nSkipped (outside Recorder retention): {skipped_retention}\nCCU-Historian duplicate rows dropped: {duplicate_rows}\nConflicting timestamps resolved (last source value kept): {conflicting_timestamps}\nRecorder configuration: {retention}\nRetention cutoff (UTC): {purge_before}\nSource start (UTC): {first}\nSource end (UTC): {last}\nEarliest existing HA state (UTC): {oldest}\n\nOnly source data within the current Recorder retention window and before the first existing HA state will be imported. If automatic purging is disabled, no retention cutoff applies. Older data will not be kept with auto_purge enabled. Verify your backup before confirming.",
         "data": {
           "confirm": "I have a backup and want to import the missing rows"
         }
@@ -50,7 +50,7 @@
       },
       "historian_point": {
         "title": "Choose datapoint and time period",
-        "description": "Select a datapoint and a time range. With auto_purge enabled, MoreRecords fetches only the portion within the configured retention window. Existing HA history is never overwritten.\n\nLast data validation error: {diagnostic}",
+        "description": "Select a datapoint and a time range. With auto_purge enabled, MoreRecords fetches only the portion within the configured retention window. Existing HA history is never overwritten.\n\nLast data validation error: {diagnostic}\n\nIf CCU-Historian returns different values at the exact same timestamp, MoreRecords keeps the last value from the source and reports the number of collisions before confirmation.",
         "data": {
           "point_id": "CCU-Historian datapoint",
           "start_date": "First day",
