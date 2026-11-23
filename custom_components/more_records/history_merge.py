@@ -183,6 +183,14 @@ def plan_missing(
             bridge = HistoryRow(marker, desired)
             bridge_next_state_id = existing[0].state_id
 
+    if bridge is not None:
+        # The explicitly selected gap policy takes priority over optional
+        # supports after its artificial transition.
+        support_rows = [
+            row for row in support_rows
+            if not (bridge.timestamp <= row.timestamp < oldest)
+        ]
+
     return MergePlan(
         eligible=eligible,
         support_rows=support_rows,
