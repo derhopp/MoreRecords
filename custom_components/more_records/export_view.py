@@ -32,11 +32,13 @@ def get_export_store(hass) -> ExportTicketStore:
 
 
 def signed_export_url(
-    hass, entry_id: str, entity_id: str, start_ts: float, end_ts: float
+    hass, entry_id: str, entity_id: str, start_ts: float, end_ts: float,
+    reconstruct_initial_state: bool = False,
 ) -> str:
     """Generate a ten-minute signed relative URL and single-use ticket."""
     ticket_id = get_export_store(hass).create(
-        entry_id, entity_id, start_ts, end_ts
+        entry_id, entity_id, start_ts, end_ts,
+        reconstruct_initial_state=reconstruct_initial_state,
     )
     return async_sign_path(
         hass, f"/api/more_records/export/{ticket_id}",
@@ -66,6 +68,7 @@ class MoreRecordsExportView(HomeAssistantView):
             rows = await async_export_rows(
                 self._hass, export_ticket.entity_id,
                 export_ticket.start_ts, export_ticket.end_ts,
+                reconstruct_initial_state=export_ticket.reconstruct_initial_state,
             )
             if not rows:
                 return web.Response(
@@ -93,7 +96,8 @@ class MoreRecordsExportView(HomeAssistantView):
         filename_entity = re.sub(
             r"[^a-z0-9_.-]", "_", export_ticket.entity_id.lower()
         )[:120]
-        filename = f"more_records_{filename_entity}.csv"
+        suffix = "_reconstructed" if export_ticket.reconstruct_initial_state else ""
+        filename = f"more_records_{filename_entity}{suffix}.csv"
         return web.Response(
             text=document,
             content_type="text/csv",
