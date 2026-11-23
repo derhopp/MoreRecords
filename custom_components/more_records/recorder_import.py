@@ -46,6 +46,7 @@ class ImportOutcome:
     skipped_after_latest: int = 0
     conflicting_exact: int = 0
     synthetic_rows: int = 0
+    daily_support_rows: int = 0
 
     @property
     def skipped(self) -> int:
@@ -118,7 +119,8 @@ def _existing(session: Any, entity_id: str) -> tuple[int, list[StoredState], dic
 
 
 def _plan(
-    recorder: Any, entity_id: str, source: list[HistoryRow], mode: GapMode
+    recorder: Any, entity_id: str, source: list[HistoryRow], mode: GapMode,
+    support_window: tuple[float, float] | None, support_timezone: str | None,
 ) -> MergePlan:
     """Read-only preview against live Recorder data and retention."""
     if recorder.engine is None or recorder.engine.dialect.name != "sqlite":
@@ -128,22 +130,29 @@ def _plan(
         boundary = retention_boundary(
             recorder.auto_purge, recorder.keep_days, time.time()
         )
-        return plan_missing(source, existing, mode, purge_before=boundary)
+        return plan_missing(
+            source, existing, mode, purge_before=boundary,
+            support_window=support_window, support_timezone=support_timezone,
+        )
 
 
 async def async_preview_merge(
-    hass: Any, entity_id: str, source: list[HistoryRow], mode: GapMode
+    hass: Any, entity_id: str, source: list[HistoryRow], mode: GapMode,
+    *, support_window: tuple[float, float] | None = None,
+    support_timezone: str | None = None,
 ) -> MergePlan:
     """Create the preview on a database executor, never on HA's event loop."""
     recorder = get_instance(hass)
     return await recorder.async_add_executor_job(
-        _plan, recorder, entity_id, source, mode
+        _plan, recorder, entity_id, source, mode,
+        support_window, support_timezone,
     )
 
 
 def _write(
     recorder: Any, entity_id: str, source: list[HistoryRow],
     mode: GapMode, preview_signature: str,
+    support_window: tuple[float, float] | None, support_timezone: str | None,
 ) -> ImportOutcome:
     """Recheck preview under a single SQLite writer transaction and merge."""
     if recorder.engine is None or recorder.engine.dialect.name != "sqlite":
@@ -154,19 +163,22 @@ def _write(
             boundary = retention_boundary(
                 recorder.auto_purge, recorder.keep_days, time.time()
             )
-            plan = plan_missing(source, existing, mode, purge_before=boundary)
+            plan = plan_missing(
+                source, existing, mode, purge_before=boundary,
+                support_window=support_window, support_timezone=support_timezone,
+            )
             if plan.signature != preview_signature:
                 raise RecorderImportError(
                     "Recorder states or import eligibility changed since preview; "
                     "start a new import to review the new merge plan"
                 )
-            if not plan.eligible:
+            if not plan.eligible and not plan.support_rows:
                 return ImportOutcome(
                     0, plan.skipped_exact, plan.skipped_retention,
                     plan.skipped_after_latest, plan.conflicting_exact
                 )
 
-            additions = list(plan.eligible)
+            additions = [*plan.eligible, *plan.support_rows]
             if plan.bridge is not None:
                 additions.append(plan.bridge)
                 additions.sort(key=lambda r: r.timestamp)
@@ -249,6 +261,7 @@ def _write(
                 plan.skipped_after_latest,
                 plan.conflicting_exact,
                 int(plan.bridge is not None),
+                len(plan.support_rows),
             )
         except Exception:
             session.rollback()
@@ -264,12 +277,15 @@ class _MergeTask(RecorderTask):
     source: list[HistoryRow]
     mode: GapMode
     preview_signature: str
+    support_window: tuple[float, float] | None
+    support_timezone: str | None
 
     def run(self, instance: Any) -> None:
         try:
             self.done.set_result(
                 _write(instance, self.entity_id, self.source,
-                       self.mode, self.preview_signature)
+                       self.mode, self.preview_signature,
+                       self.support_window, self.support_timezone)
             )
         except Exception as err:
             self.done.set_exception(err)
@@ -278,11 +294,16 @@ class _MergeTask(RecorderTask):
 async def async_merge_states(
     hass: Any, entity_id: str, source: list[HistoryRow],
     mode: GapMode, preview_signature: str,
+    *, support_window: tuple[float, float] | None = None,
+    support_timezone: str | None = None,
 ) -> ImportOutcome:
     """Merge missing timestamps and optionally bridge the leading gap."""
     recorder = get_instance(hass)
     future: concurrent.futures.Future[ImportOutcome] = concurrent.futures.Future()
     recorder.queue_task(
-        _MergeTask(future, entity_id, source, mode, preview_signature)
+        _MergeTask(
+            future, entity_id, source, mode, preview_signature,
+            support_window, support_timezone,
+        )
     )
     return await asyncio.wrap_future(future)
