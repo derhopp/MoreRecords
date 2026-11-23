@@ -11,6 +11,8 @@ from homeassistant.components.recorder import get_instance
 from homeassistant.components.recorder.db_schema import States, StatesMeta
 
 from .export_csv import ExportError, ExportTooLarge, MAX_EXPORT_ROWS
+from .anchor_policy import choose_predecessor, with_initial_state
+from .retention_anchors import async_read_anchor
 
 
 @dataclass(frozen=True, slots=True)
@@ -20,6 +22,7 @@ class ExportSummary:
     count: int
     first_ts: float | None
     last_ts: float | None
+    initial_source: str | None = None
 
 
 def _metadata_id(session: Any, entity_id: str) -> int | None:
@@ -52,22 +55,63 @@ def _preview(
         )
 
 
+def _previous(recorder: Any, entity_id: str, start_ts: float) -> tuple[float, str] | None:
+    """Find the last remaining Recorder observation strictly before the window."""
+    with recorder.get_session() as session:
+        meta_id = _metadata_id(session, entity_id)
+        if meta_id is None:
+            return None
+        row = session.execute(
+            select(States.last_updated_ts, States.state)
+            .where(States.metadata_id == meta_id)
+            .where(States.last_updated_ts < start_ts)
+            .order_by(States.last_updated_ts.desc(), States.state_id.desc())
+            .limit(1)
+        ).first()
+        return (float(row[0]), str(row[1])) if row and row[1] is not None else None
+
+
+async def _initial_state(
+    hass: Any, recorder: Any, entity_id: str, start_ts: float
+) -> tuple[float, str, str] | None:
+    """Compare the live predecessor with the separately persisted purge anchor."""
+    recorded = await recorder.async_add_executor_job(
+        _previous, recorder, entity_id, start_ts
+    )
+    anchor = await async_read_anchor(hass, entity_id)
+    return choose_predecessor(start_ts, recorded, anchor)
+
+
 async def async_export_preview(
-    hass: Any, entity_id: str, start_ts: float, end_ts: float
+    hass: Any, entity_id: str, start_ts: float, end_ts: float,
+    *, reconstruct_initial_state: bool = False,
 ) -> ExportSummary:
-    """Read a bounded export preview through Recorder's DB executor."""
+    """Preview actual Recorder rows or a clearly opt-in reconstructed initial state."""
     recorder = get_instance(hass)
     summary = await recorder.async_add_executor_job(
         _preview, recorder, entity_id, start_ts, end_ts
     )
-    if not summary.count:
-        raise ExportError("No stored Recorder states in the selected time range")
-    if summary.count > MAX_EXPORT_ROWS:
+    predecessor = (
+        await _initial_state(hass, recorder, entity_id, start_ts)
+        if reconstruct_initial_state else None
+    )
+    inserted = predecessor is not None and (
+        summary.first_ts is None or summary.first_ts > start_ts
+    )
+    count = summary.count + int(inserted)
+    if not count:
+        raise ExportError("No stored Recorder states or known initial state in the selected time range")
+    if count > MAX_EXPORT_ROWS:
         raise ExportTooLarge(
-            f"{summary.count} states exceed the {MAX_EXPORT_ROWS} row limit; "
+            f"{count} states exceed the {MAX_EXPORT_ROWS} row limit; "
             "select a shorter interval"
         )
-    return summary
+    return ExportSummary(
+        count,
+        start_ts if inserted else summary.first_ts,
+        summary.last_ts if summary.last_ts is not None else (start_ts if inserted else None),
+        predecessor[2] if inserted else None,
+    )
 
 
 def _read(
@@ -96,10 +140,20 @@ def _read(
 
 
 async def async_export_rows(
-    hass: Any, entity_id: str, start_ts: float, end_ts: float
+    hass: Any, entity_id: str, start_ts: float, end_ts: float,
+    *, reconstruct_initial_state: bool = False,
 ) -> list[tuple[float, str | None]]:
-    """Load raw state history without writing or modifying Recorder data."""
+    """Export real rows, with an optional *derived* start-state observation.
+
+    The start timestamp in reconstructed mode is not an actual state event.
+    """
     recorder = get_instance(hass)
-    return await recorder.async_add_executor_job(
+    rows = await recorder.async_add_executor_job(
         _read, recorder, entity_id, start_ts, end_ts
     )
+    if reconstruct_initial_state:
+        predecessor = await _initial_state(hass, recorder, entity_id, start_ts)
+        rows = with_initial_state(rows, start_ts, predecessor)
+    if len(rows) > MAX_EXPORT_ROWS:
+        raise ExportTooLarge("More than 100,000 exported rows; shorten the range")
+    return rows
