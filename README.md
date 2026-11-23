@@ -42,7 +42,7 @@ MoreRecords is a **Home Assistant custom integration (development preview)** for
 
 1. Open HACS → three-dot menu → **Custom repositories**.
 2. Enter `https://github.com/derhopp/MoreRecords`, choose **Integration**, and add it.
-3. Install the `0.1.0b2` **prerelease** from the custom HACS repository (enable beta/prerelease versions in HACS if necessary). This is not a stable release.
+3. Install the `0.1.0b3` **prerelease** from the custom HACS repository (enable beta/prerelease versions in HACS if necessary). This is not a stable release.
 4. Restart Home Assistant.
 5. Go to **Settings → Devices & services → Add integration** and search for **MoreRecords**.
 6. Open the integration's **Configure** action and choose **Import** or **Export CSV**. There is no separate dashboard panel.
