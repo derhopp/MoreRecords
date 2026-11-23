@@ -34,7 +34,6 @@ class ExportTicket:
     start_ts: float
     end_ts: float
     expires_at: float
-    reconstruct_initial_state: bool = False
 
 
 class ExportTicketStore:
@@ -46,7 +45,6 @@ class ExportTicketStore:
     def create(
         self, entry_id: str, entity_id: str, start_ts: float,
         end_ts: float, *, now: float | None = None,
-        reconstruct_initial_state: bool = False,
     ) -> str:
         """Issue a random single-use ticket valid for ten minutes."""
         current = time.monotonic() if now is None else now
@@ -60,7 +58,6 @@ class ExportTicketStore:
         self._tickets[ticket_id] = ExportTicket(
             entry_id, entity_id, start_ts, end_ts,
             current + EXPORT_TICKET_SECONDS,
-            reconstruct_initial_state,
         )
         return ticket_id
 

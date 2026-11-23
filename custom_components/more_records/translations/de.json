@@ -69,24 +69,23 @@
       },
       "export": {
         "title": "Recorder-Zustände exportieren",
-        "description": "Entität, Start- und Enddatum mit Uhrzeit auswählen. Zeiten ohne UTC-Offset gelten in der HA-Zeitzone. Start eingeschlossen, Ende ausgeschlossen. Letzte Diagnose: {diagnostic}\n\nOptional: Rekonstruktion ergänzt am Anfang des ausgewählten Zeitraums einen abgeleiteten Zustand, falls ein zuvor beobachteter Wert vorliegt. Das ist kein echter Zustandswechsel und kein Beleg für lückenlose Aufzeichnung.",
+        "description": "Entität, Start- und Enddatum mit Uhrzeit auswählen. Zeiten ohne UTC-Offset gelten in der HA-Zeitzone. Start eingeschlossen, Ende ausgeschlossen. Letzte Diagnose: {diagnostic}",
         "data": {
           "entity_id": "Aufgezeichnete Entität",
           "start_time": "Startdatum und -uhrzeit",
-          "end_time": "Enddatum und -uhrzeit",
-          "reconstruct_initial_state": "Anfangszustand aus vorherigem Recorder-Wert oder Retention-Anker rekonstruieren"
+          "end_time": "Enddatum und -uhrzeit"
         }
       },
       "export_confirm": {
         "title": "CSV-Export bestätigen",
-        "description": "Entität: {entity_id}\nExportierte Zeilen: {count}\nRekonstruktion: {reconstruction}\nBeginn (UTC): {start}\nEnde (UTC, ausgeschlossen): {end}\nErste exportierte Zeile: {first}\nLetzte exportierte Zeile: {last}\n\nBei Rekonstruktion kann der Beginn ein abgeleiteter Wert statt eines Recorder-Ereignisses sein. Keine Zustandsänderung in Home Assistant. Vor dem Weiterverwenden die mögliche Aufzeichnungslücke beachten.",
+        "description": "Entität: {entity_id}\nRecorder-Zeilen: {count}\nStart (UTC): {start}\nEnde (UTC, ausgeschlossen): {end}\nErster gespeicherter Wert: {first}\nLetzter gespeicherter Wert: {last}\n\nAlle Recorder-Rohzustände werden ausgegeben, ohne die Datenbank zu verändern. Bestätigung erzeugt einen einmalig nutzbaren Download-Link für zehn Minuten.",
         "data": {
           "confirm": "CSV-Download-Link erzeugen"
         }
       },
       "export_download": {
         "title": "CSV herunterladen",
-        "description": "CSV-Export für **{entity_id}** ({count} exportierte Zeilen; Rekonstruktion: {reconstruction}):\n\n**[CSV-Datei herunterladen]({download_url})**\n\nDer Link ist zehn Minuten gültig und nur einmal verwendbar. Abgeleitete Anfangszeilen dürfen nicht als echte Recorder-Zustandswechsel oder Kontinuitätsnachweis behandelt werden."
+        "description": "CSV-Export für **{entity_id}** ({count} Rohzustände):\n\n**[CSV-Datei herunterladen]({download_url})**\n\nDer Link ist zehn Minuten gültig und nur einmal verwendbar. Nach dem Herunterladen auf Senden klicken."
       }
     },
     "error": {

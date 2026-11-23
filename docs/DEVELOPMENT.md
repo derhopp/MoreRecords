@@ -73,7 +73,3 @@ The `getTimeSeriesRaw` arrays preserve source order. If multiple source observat
 ## Transition policies and LightAway evidence
 
 An import must explicitly select `hold_last`, `oldest_recorder`, or `unavailable`. Only the gap from the last newly imported prefix sample to the FIRST original Recorder state is bridged; no silent synthetic interpolation occurs in internal intervals. The last two modes may add a synthetic marker 1 microsecond after the last prefix sample. Synthetic observations are not CCU-Historian source rows and cannot justify attested continuity. A failed exact verification must never roll back the user-facing success status of an already committed import, nor create a false continuity certificate. All Recorder mutations must be checked against the current stored snapshot inside the writer transaction.
-
-## Rolling retention anchors (beta 4)
-
-`retention_anchors.py` snapshots last real pre-cutoff observations per entity at startup and 04:00 local, saving to `.storage`; `anchor_policy.py` enforces monotonic per-entity timestamps and selects a prior observation for opt-in reconstructed CSV export. Native Recorder rows remain subject to purge and are never synthesized by the snapshot service. Manual purges, downtime, or already-lost state rows can defeat the snapshot. Reconstructed CSV start rows are derived state estimates, not CCU-Historian evidence and not a verified continuity certificate.

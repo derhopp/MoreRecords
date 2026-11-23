@@ -114,14 +114,3 @@ def test_ticket_store_bounds_memory_use():
     for i in range(35):
         store.create("entry", "light.a", i, i + 1, now=123)
     assert len(store._tickets) <= 30
-
-
-def test_export_ticket_remembers_opt_in_reconstruction():
-    store = ExportTicketStore()
-    token = store.create(
-        "entry1", "light.kitchen", 100, 200, now=5,
-        reconstruct_initial_state=True,
-    )
-    assert store.consume(token, now=6).reconstruct_initial_state is True
-    other = store.create("entry1", "light.kitchen", 100, 200, now=5)
-    assert store.consume(other, now=6).reconstruct_initial_state is False

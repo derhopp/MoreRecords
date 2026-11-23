@@ -2,7 +2,7 @@
 
 MoreRecords is a **Home Assistant custom integration (development preview)** for importing historical CSV or CCU-Historian observations and **exporting Recorder states to CSV** to an **existing** entity's Recorder history, without changing its current state.
 
-> **Experimental beta — `0.1.0b4` prerelease.** MoreRecords writes to Home Assistant's private Recorder schema. Make a full Home Assistant backup first. Compatibility is not guaranteed across Home Assistant upgrades. Use only in a disposable test instance until you have verified your version.
+> **Experimental beta — `0.1.0b3` prerelease.** MoreRecords writes to Home Assistant's private Recorder schema. Make a full Home Assistant backup first. Compatibility is not guaranteed across Home Assistant upgrades. Use only in a disposable test instance until you have verified your version.
 
 ## Features
 
@@ -20,12 +20,6 @@ MoreRecords is a **Home Assistant custom integration (development preview)** for
 - **Respect automatic Recorder purging**: if enabled, skip source points older than the live `purge_keep_days` cutoff; if disabled, importing older history is unrestricted by retention.
 - English and German configuration flows follow Home Assistant's language selection.
 
-## Rolling Recorder retention anchors (beta 4)
-
-MoreRecords snapshots the last observed Recorder state before the rolling `auto_purge` cutoff for **every recorded entity**, retaining the timestamp and value under Home Assistant `.storage` rather than inserting fake Recorder rows. Snapshots run when the integration starts and at 04:00 Home Assistant local time, before the usual scheduled purge. This is best-effort: previously deleted states, manual or early purges and extended Home Assistant downtime cannot be repaired automatically.
-
-**Raw CSV export remains unchanged.** To use an anchor, select **Reconstruct initial state** in Export CSV. If the selected start time has a known earlier observation, MoreRecords writes its value at the CSV start time; that initial row is **derived**, not a real observed state change. The filename includes `_reconstructed`. Such CSVs retain the two-column format but do not establish full source coverage and should not be mistaken for source measurements. Anchors do not change the native Home Assistant History UI or the existing CCU-Historian coverage-verification policy.
-
 ## Requirements
 
 - Home Assistant Core with compatible Recorder internals (initial target: **2026.10+**, not yet verified on a live installation).
@@ -41,14 +35,14 @@ MoreRecords snapshots the last observed Recorder state before the rolling `auto_
     purge_keep_days: 30
   ```
 
-  With `auto_purge` enabled, imported raw data will still expire normally as the rolling retention window advances. The separate retention anchors preserve at most one pre-cutoff state per entity, not the raw historical event series. To keep raw history indefinitely, explicitly use `auto_purge: false` and account for database growth. No per-entity retention exceptions are created by MoreRecords.
+  With `auto_purge` enabled, imported raw data will still expire normally as the rolling retention window advances. To keep raw history indefinitely, explicitly use `auto_purge: false` and account for database growth. No per-entity retention exceptions are created by MoreRecords.
 - A complete, restorable backup before every import.
 
 ## Installation using HACS (custom repository)
 
 1. Open HACS → three-dot menu → **Custom repositories**.
 2. Enter `https://github.com/derhopp/MoreRecords`, choose **Integration**, and add it.
-3. Install the `0.1.0b4` **prerelease** from the custom HACS repository (enable beta/prerelease versions in HACS if necessary). This is not a stable release.
+3. Install the `0.1.0b3` **prerelease** from the custom HACS repository (enable beta/prerelease versions in HACS if necessary). This is not a stable release.
 4. Restart Home Assistant.
 5. Go to **Settings → Devices & services → Add integration** and search for **MoreRecords**.
 6. Open the integration's **Configure** action and choose **Import** or **Export CSV**. There is no separate dashboard panel.
