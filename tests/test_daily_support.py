@@ -80,7 +80,7 @@ def test_six_oclock_is_outside_morning_exclusion_window():
 def test_pre_cutoff_source_may_seed_first_midnight_but_never_be_inserted():
     cutoff = ts(19, 18)
     p = plan(
-        [(ts(19, 10), "on"), (ts(23, 14), "off")],
+        [(ts(19, 10), "on"), (ts(20, 14), "off")],
         [(ts(25), "off")], cutoff=cutoff, end=ts(21),
     )
     assert p.support_rows == [HistoryRow(ts(20), "on")]
