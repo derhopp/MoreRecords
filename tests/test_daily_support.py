@@ -157,3 +157,14 @@ def test_morning_exact_midnight_exclusion_and_dst_midnight():
     )
     assert [r.timestamp for r in points] == [first, second]
     assert second - first == 23 * 3600
+
+
+def test_rejected_timestamp_conflict_is_not_used_as_a_midnight_source():
+    p = plan(
+        [(ts(19, 10), "on"), (ts(20, 10), "off")],
+        [(ts(20, 10), "on"), (ts(25), "on")], end=ts(23),
+    )
+    assert p.conflicting_exact == 1
+    assert [(r.timestamp, r.value) for r in p.support_rows] == [
+        (ts(20), "on")
+    ]
