@@ -2,7 +2,7 @@
 
 MoreRecords is a **Home Assistant custom integration (development preview)** for importing historical CSV or CCU-Historian observations and **exporting Recorder states to CSV** to an **existing** entity's Recorder history, without changing its current state.
 
-> **Experimental beta — `0.1.0b3` prerelease.** MoreRecords writes to Home Assistant's private Recorder schema. Make a full Home Assistant backup first. Compatibility is not guaranteed across Home Assistant upgrades. Use only in a disposable test instance until you have verified your version.
+> **Experimental beta — `0.1.0b5` prerelease.** MoreRecords writes to Home Assistant's private Recorder schema. Make a full Home Assistant backup first. Compatibility is not guaranteed across Home Assistant upgrades. Use only in a disposable test instance until you have verified your version.
 
 ## Features
 
@@ -19,6 +19,12 @@ MoreRecords is a **Home Assistant custom integration (development preview)** for
 - **Exact timestamp merge**: existing HA states are authoritative; source rows at different timestamps can fill the already recorded interval. Values at exactly matching timestamps are skipped (and conflicting values counted), and source points after the newest stored HA state are not appended.
 - **Respect automatic Recorder purging**: if enabled, skip source points older than the live `purge_keep_days` cutoff; if disabled, importing older history is unrestricted by retention.
 - English and German configuration flows follow Home Assistant's language selection.
+
+## Optional daily 00:00 import support rows (beta 5)
+
+A user may explicitly enable **Create daily 00:00 support rows from imported observations** in the Import wizard. This option is **off by default**. For every local calendar day within the selected source window, MoreRecords may insert a synthetic 00:00 state record carrying the latest **actual imported-source observation** at or before midnight; it never interpolates between two measurements. If any real CSV/CCU-Historian observation or existing Recorder state exists between 00:00 (inclusive) and 06:00 (exclusive) that day, no support point is generated.
+
+No points are created before the first source observation or after the latest original HA Recorder state. The support timestamp itself must be within the active auto-purge retention window, but an earlier authentic source state from the selected import window can establish the initial eligible midnight support. With CCU-Historian, enabling the option fetches the **complete selected range**, rather than trimming the request to the cutoff; the original pre-cutoff state is not reinserted. CSV uses its source timestamps as the import window. The user's chosen transition-gap policy remains authoritative. Every generated 00:00 point is a **derived timestamp** and *not* a measurement, observed event, interpolation, or evidence of full source coverage. No b4 rolling-anchor or reconstructed-export feature is included in this beta.
 
 ## Requirements
 
@@ -42,7 +48,7 @@ MoreRecords is a **Home Assistant custom integration (development preview)** for
 
 1. Open HACS → three-dot menu → **Custom repositories**.
 2. Enter `https://github.com/derhopp/MoreRecords`, choose **Integration**, and add it.
-3. Install the `0.1.0b3` **prerelease** from the custom HACS repository (enable beta/prerelease versions in HACS if necessary). This is not a stable release.
+3. Install the `0.1.0b5` **prerelease** from the custom HACS repository (enable beta/prerelease versions in HACS if necessary). This is not a stable release.
 4. Restart Home Assistant.
 5. Go to **Settings → Devices & services → Add integration** and search for **MoreRecords**.
 6. Open the integration's **Configure** action and choose **Import** or **Export CSV**. There is no separate dashboard panel.

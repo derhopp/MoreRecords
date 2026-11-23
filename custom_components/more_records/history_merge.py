@@ -15,6 +15,7 @@ import math
 from typing import Literal
 
 from .csv_import import HistoryRow
+from .daily_support import midnight_supports
 
 GapMode = Literal["hold_last", "oldest_recorder", "unavailable"]
 GAP_MODES = frozenset(("hold_last", "oldest_recorder", "unavailable"))
@@ -37,6 +38,7 @@ class MergePlan:
     """A reproducible preview of missing source points and a gap transition."""
 
     eligible: list[HistoryRow]
+    support_rows: list[HistoryRow]
     skipped_exact: int
     skipped_retention: int
     skipped_after_latest: int
@@ -71,6 +73,9 @@ def _signature(
     bridge: HistoryRow | None,
     gap_mode: str,
     purge_before: float | None,
+    support_rows: list[HistoryRow],
+    support_window: tuple[float, float] | None,
+    support_timezone: str | None,
 ) -> str:
     """Bind user confirmation to a precise source and stored-history snapshot."""
     digest = hashlib.sha256()
@@ -84,13 +89,14 @@ def _signature(
             ),
         ),
         ("eligible", ((r.timestamp, r.value) for r in eligible)),
+        ("supports", ((r.timestamp, r.value) for r in support_rows)),
         ("bridge", ((bridge.timestamp, bridge.value),) if bridge else ()),
     ):
         digest.update((prefix + ":").encode())
         for item in items:
             digest.update(repr(tuple(item)).encode())
             digest.update(b"\n")
-    digest.update(f"{gap_mode}|{purge_before is not None}".encode())
+    digest.update(f"{gap_mode}|{purge_before is not None}|{support_window}|{support_timezone}".encode())
     return digest.hexdigest()
 
 
@@ -100,6 +106,8 @@ def plan_missing(
     gap_mode: GapMode,
     *,
     purge_before: float | None = None,
+    support_window: tuple[float, float] | None = None,
+    support_timezone: str | None = None,
 ) -> MergePlan:
     """Keep missing source timestamps while never overwriting stored states.
 
@@ -143,6 +151,22 @@ def plan_missing(
         else:
             eligible.append(row)
 
+    support_rows: list[HistoryRow] = []
+    if support_window is not None:
+        if not support_timezone:
+            raise ValueError("Time zone is required for daily midnight supports")
+        support_rows = midnight_supports(
+            rows,
+            [state.timestamp for state in existing],
+            window_start=support_window[0], window_end=support_window[1],
+            timezone_name=support_timezone, purge_before=purge_before,
+            newest_recorded=newest,
+            conflicting_source_timestamps=frozenset(
+                row.timestamp for row in rows
+                if row.timestamp in stored_at_time
+                and stored_at_time[row.timestamp].value != row.value
+            ),
+        )
     bridge: HistoryRow | None = None
     bridge_next_state_id: int | None = None
     prefix = [row for row in eligible if row.timestamp < oldest]
@@ -164,8 +188,17 @@ def plan_missing(
             bridge = HistoryRow(marker, desired)
             bridge_next_state_id = existing[0].state_id
 
+    if bridge is not None:
+        # The explicitly selected gap policy takes priority over optional
+        # supports after its artificial transition.
+        support_rows = [
+            row for row in support_rows
+            if not (bridge.timestamp <= row.timestamp < oldest)
+        ]
+
     return MergePlan(
         eligible=eligible,
+        support_rows=support_rows,
         skipped_exact=skip_exact,
         skipped_retention=skip_retention,
         skipped_after_latest=skip_future,
@@ -178,7 +211,8 @@ def plan_missing(
         bridge_next_state_id=bridge_next_state_id,
         total=len(rows),
         signature=_signature(
-            rows, existing, eligible, bridge, gap_mode, purge_before
+            rows, existing, eligible, bridge, gap_mode, purge_before,
+            support_rows, support_window, support_timezone
         ),
     )
 

@@ -94,6 +94,8 @@ class MoreRecordsOptionsFlow(OptionsFlow):
         self._rows: list[HistoryRow] = []
         self._plan: MergePlan | None = None
         self._gap_mode = "hold_last"
+        self._daily_support = False
+        self._support_window: tuple[float, float] | None = None
         self._historian_range: tuple[float, float] | None = None
         self._preview: dict[str, str] = {}
         self._ccu_url = ""
@@ -120,10 +122,20 @@ class MoreRecordsOptionsFlow(OptionsFlow):
             state, rows, datetime.now(timezone.utc).timestamp()
         )
         recorder = get_instance(self.hass)
+        if self._source == "csv":
+            # CSV has no separate start/end controls: its actual observation
+            # range is the only user-supplied import window.
+            self._support_window = (
+                normalized[0].timestamp,
+                normalized[-1].timestamp + 0.000001,
+            )
+        support_window = self._support_window if self._daily_support else None
         plan = await async_preview_merge(
-            self.hass, self._entity_id, normalized, self._gap_mode
+            self.hass, self._entity_id, normalized, self._gap_mode,
+            support_window=support_window,
+            support_timezone=(self.hass.config.time_zone if support_window else None),
         )
-        if not plan.eligible and self._source != "ccu_historian":
+        if not plan.eligible and not plan.support_rows and self._source != "ccu_historian":
             if plan.skipped_retention:
                 raise RetentionNoDataError(
                     "No importable rows inside the live Recorder retention window"
@@ -141,6 +153,8 @@ class MoreRecordsOptionsFlow(OptionsFlow):
             "source": label,
             "total": str(plan.total),
             "importable": str(len(plan.eligible)),
+            "daily_support_enabled": "yes" if self._daily_support else "no",
+            "daily_support_count": str(len(plan.support_rows)),
             "skipped": str(plan.skipped),
             "skipped_overlap": str(plan.skipped_exact),
             "skipped_retention": str(plan.skipped_retention),
@@ -218,6 +232,7 @@ class MoreRecordsOptionsFlow(OptionsFlow):
                         "mode": "dropdown",
                     }
                 ),
+                vol.Optional("daily_midnight_support", default=False): bool,
                 vol.Required("gap_mode"): SelectSelector(
                     {
                         "options": [
@@ -244,6 +259,7 @@ class MoreRecordsOptionsFlow(OptionsFlow):
                 self._entity_id = entity_id
                 self._source = user_input["source"]
                 self._gap_mode = user_input["gap_mode"]
+                self._daily_support = bool(user_input.get("daily_midnight_support", False))
                 if self._gap_mode not in GAP_MODES:
                     errors["base"] = "invalid_gap_mode"
                     return self.async_show_form(
@@ -495,13 +511,14 @@ class MoreRecordsOptionsFlow(OptionsFlow):
                             user_input["start_date"], user_input["end_date"],
                             self.hass.config.time_zone,
                         )
-                        # Avoid requesting years of CCU-Historian data that
-                        # Home Assistant would automatically purge anyway.
+                        # The optional daily support feature needs original
+                        # observations from the selected user interval, possibly
+                        # BEFORE the cutoff for its first eligible midnight.
                         recorder = get_instance(self.hass)
                         purge_before = retention_boundary(
                             recorder.auto_purge, recorder.keep_days, time.time()
                         )
-                        if purge_before is not None:
+                        if purge_before is not None and not self._daily_support:
                             start_ms = max(
                                 start_ms, math.ceil(purge_before * 1000)
                             )
@@ -517,6 +534,7 @@ class MoreRecordsOptionsFlow(OptionsFlow):
                                 point.idx, start_ms, end_ms
                             )
                             self._historian_range = (start_ms / 1000, end_ms / 1000)
+                            self._support_window = self._historian_range
                             if not rows:
                                 errors["base"] = "historian_empty"
                             else:
@@ -601,10 +619,17 @@ class MoreRecordsOptionsFlow(OptionsFlow):
                     )
                     if self._plan is None:
                         raise RecorderImportError("Import preview has expired")
-                    if self._plan.eligible:
+                    if self._plan.eligible or self._plan.support_rows:
+                        support_window = (
+                            self._support_window if self._daily_support else None
+                        )
                         outcome = await async_merge_states(
                             self.hass, self._entity_id, self._rows,
                             self._gap_mode, self._plan.signature,
+                            support_window=support_window,
+                            support_timezone=(
+                                self.hass.config.time_zone if support_window else None
+                            ),
                         )
                     else:
                         outcome = ImportOutcome(
@@ -622,7 +647,7 @@ class MoreRecordsOptionsFlow(OptionsFlow):
                         # from the import itself. A synthetic transition can
                         # never qualify as source-verified evidence.
                         coverage_status = "not_verified"
-                        if self._plan.bridge is None:
+                        if self._plan.bridge is None and not self._plan.support_rows:
                             try:
                                 if self._historian_range is None:
                                     raise HistoryVerificationError(
@@ -668,6 +693,8 @@ class MoreRecordsOptionsFlow(OptionsFlow):
                             "last_skipped_after_latest": outcome.skipped_after_latest,
                             "last_conflicting_existing": outcome.conflicting_exact,
                             "last_synthetic_rows": outcome.synthetic_rows,
+                            "last_daily_support_rows": outcome.daily_support_rows,
+                            "last_daily_support_enabled": self._daily_support,
                             "last_gap_mode": self._gap_mode,
                             "last_coverage_status": coverage_status,
                             "last_import_utc": datetime.now(timezone.utc).isoformat(),
