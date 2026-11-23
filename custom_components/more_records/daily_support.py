@@ -26,6 +26,7 @@ def midnight_supports(
     timezone_name: str,
     purge_before: float | None,
     newest_recorded: float,
+    conflicting_source_timestamps: frozenset[float] = frozenset(),
 ) -> list[HistoryRow]:
     """Plan only missing local 00:00 samples, suppressing days with 00-06 events.
 
@@ -78,7 +79,9 @@ def midnight_supports(
         ):
             continue
         index = bisect_right(source_times, midnight) - 1
-        if index < 0:
+        if index < 0 or source[index].timestamp in conflicting_source_timestamps:
+            # Recorder owns exact-timestamp conflicts; never fabricate a
+            # later midnight from an observation the merge has rejected.
             continue
         value = source[index].value
         result.append(HistoryRow(midnight, value))
