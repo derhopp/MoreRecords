@@ -1,0 +1,42 @@
+name: Withdraw superseded 0.1.0b4 prerelease
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  withdraw:
+    if: github.repository == 'derhopp/MoreRecords'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Remove 0.1.0b4 release and its tag, but never other versions
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          if [[ "$(git log -1 --pretty=%s)" != "chore: withdraw prerelease 0.1.0b4" ]]; then
+            echo "Not the authorized one-off withdrawal commit."
+            exit 0
+          fi
+          if gh release view "0.1.0b4" --repo "$REPO" >/dev/null 2>&1; then
+            gh release delete "0.1.0b4" --repo "$REPO" --yes --cleanup-tag
+          else
+            echo "0.1.0b4 release already absent; removing stale tag if present."
+            gh api -X DELETE "repos/$REPO/git/refs/tags/0.1.0b4" || true
+          fi
+          if gh release view "0.1.0b4" --repo "$REPO" >/dev/null 2>&1; then
+            echo "ERROR: release still exists"
+            exit 1
+          fi
+          if gh api "repos/$REPO/git/ref/tags/0.1.0b4" >/dev/null 2>&1; then
+            echo "ERROR: version tag still exists"
+            exit 1
+          fi
+          echo "Confirmed 0.1.0b4 release and tag withdrawn."
