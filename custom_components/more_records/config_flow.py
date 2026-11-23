@@ -90,6 +90,7 @@ class MoreRecordsOptionsFlow(OptionsFlow):
         self._export_entity: str | None = None
         self._export_start: float | None = None
         self._export_end: float | None = None
+        self._export_reconstruct = False
         self._export_preview: dict[str, str] = {}
         self._rows: list[HistoryRow] = []
         self._plan: MergePlan | None = None
@@ -275,15 +276,22 @@ class MoreRecordsOptionsFlow(OptionsFlow):
                         user_input["start_time"], user_input["end_time"],
                         self.hass.config.time_zone,
                     )
+                    reconstruct = bool(user_input.get("reconstruct_initial_state", False))
                     summary = await async_export_preview(
-                        self.hass, entity_id, start_ts, end_ts
+                        self.hass, entity_id, start_ts, end_ts,
+                        reconstruct_initial_state=reconstruct,
                     )
+                    self._export_reconstruct = reconstruct
                     self._export_entity = entity_id
                     self._export_start = start_ts
                     self._export_end = end_ts
                     self._export_preview = {
                         "entity_id": entity_id,
                         "count": str(summary.count),
+                        "reconstruction": (
+                            f"Yes — {summary.initial_source or 'no known initial state'}"
+                            if reconstruct else "No (raw Recorder only)"
+                        ),
                         "start": datetime.fromtimestamp(
                             start_ts, timezone.utc
                         ).isoformat(),
@@ -317,6 +325,7 @@ class MoreRecordsOptionsFlow(OptionsFlow):
                     vol.Required("entity_id"): EntitySelector({}),
                     vol.Required("start_time"): DateTimeSelector({}),
                     vol.Required("end_time"): DateTimeSelector({}),
+                    vol.Optional("reconstruct_initial_state", default=False): bool,
                 }
             ),
             errors=errors,
@@ -344,6 +353,7 @@ class MoreRecordsOptionsFlow(OptionsFlow):
             url = signed_export_url(
                 self.hass, self.config_entry.entry_id, self._export_entity,
                 self._export_start, self._export_end,
+                reconstruct_initial_state=self._export_reconstruct,
             )
             return self.async_show_form(
                 step_id="export_download",
