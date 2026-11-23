@@ -7,7 +7,7 @@ No recorder state or previously generated support point is used as the source.
 
 from __future__ import annotations
 
-from bisect import bisect_right
+from bisect import bisect_left, bisect_right
 from datetime import datetime, timedelta, timezone
 import math
 from zoneinfo import ZoneInfo
@@ -71,7 +71,7 @@ def midnight_supports(
         six_am = local_midnight.replace(hour=6).astimezone(timezone.utc).timestamp()
         # No artificial 00:00 row whenever any real source OR Recorder
         # observation exists in [local 00:00, local 06:00).
-        first_in_window = bisect_right(source_check_times, midnight - 0.000000001)
+        first_in_window = bisect_left(source_check_times, midnight)
         if (
             first_in_window < len(source_check_times)
             and source_check_times[first_in_window] < six_am
