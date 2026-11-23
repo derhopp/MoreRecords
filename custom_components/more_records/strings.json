@@ -69,23 +69,24 @@
       },
       "export": {
         "title": "Export Recorder states",
-        "description": "Choose entity, start and end date/time. Times without UTC offsets use Home Assistant timezone. Start included, end excluded. Last diagnostic: {diagnostic}",
+        "description": "Choose entity, start and end date/time. Times without UTC offsets use Home Assistant timezone. Start included, end excluded. Last diagnostic: {diagnostic}\n\nOptional reconstruction inserts a derived state at the selected start timestamp when an earlier observation is known. This is not a real state change or proof of complete history.",
         "data": {
           "entity_id": "Recorded entity",
           "start_time": "Start date and time",
-          "end_time": "End date and time"
+          "end_time": "End date and time",
+          "reconstruct_initial_state": "Reconstruct initial state from previous Recorder value or retention anchor"
         }
       },
       "export_confirm": {
         "title": "Confirm CSV export",
-        "description": "Entity: {entity_id}\nRecorder rows: {count}\nStart (UTC): {start}\nEnd (UTC, exclusive): {end}\nFirst stored row: {first}\nLast stored row: {last}\n\nEvery raw state row will be included without changing the database. Confirm to create a single-use ten-minute download link.",
+        "description": "Entity: {entity_id}\nExported rows: {count}\nReconstruction: {reconstruction}\nStart (UTC): {start}\nEnd (UTC, exclusive): {end}\nFirst exported row: {first}\nLast exported row: {last}\n\nIn reconstructed mode the start row can be a derived value, not an observed Recorder event. No Home Assistant state is modified. This does not prove continuity across recording gaps.",
         "data": {
           "confirm": "Generate CSV download link"
         }
       },
       "export_download": {
         "title": "Download CSV",
-        "description": "CSV export for **{entity_id}** ({count} raw rows):\n\n**[Download CSV file]({download_url})**\n\nThe link is valid for ten minutes and can be used only once. Click Submit after downloading to finish."
+        "description": "CSV export for **{entity_id}** ({count} exported rows; reconstruction: {reconstruction}):\n\n**[Download CSV file]({download_url})**\n\nThe link is valid for ten minutes and is single-use. Derived start rows must not be treated as actual Recorder transitions or evidence of continuous recording."
       }
     },
     "error": {
