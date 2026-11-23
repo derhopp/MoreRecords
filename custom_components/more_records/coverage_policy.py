@@ -42,15 +42,39 @@ def attestation_range(
 def compare_recorded_rows(
     expected: list[HistoryRow], actual: list[tuple[float, str]]
 ) -> None:
-    """Every source observation must equal one stored Recorder observation."""
-    if len(expected) != len(actual) or any(
-        abs(row.timestamp - timestamp) > 0.0001 or row.value != state
-        for row, (timestamp, state) in zip(expected, actual)
-    ):
-        raise HistoryVerificationError(
-            "Recorder values do not exactly match the CCU-Historian query; "
-            "history coverage was NOT certified"
-        )
+    """Require every source observation; permit only redundant Recorder rows.
+
+    Home Assistant can store repeated identical states between Historian
+    transitions. Those rows do not change the observed value and must not
+    invalidate an otherwise complete source series. A missing source point,
+    an extra *change*, or a conflict is always a verification failure.
+    """
+    source_index = 0
+    last_value: str | None = None
+    for timestamp, state in actual:
+        if source_index < len(expected):
+            source = expected[source_index]
+            if abs(timestamp - source.timestamp) <= 0.0001:
+                if state != source.value:
+                    break
+                last_value = source.value
+                source_index += 1
+                continue
+            # An unmatched Recorder sample must be strictly between two
+            # source points; do not trust values before the first source
+            # observation, or consume a missing source transition.
+            if timestamp >= source.timestamp:
+                break
+        if last_value is None or state != last_value:
+            break
+    else:
+        if source_index == len(expected):
+            return
+
+    raise HistoryVerificationError(
+        "Recorder contains a missing/conflicting Historian sample or "
+        "an additional state transition; history coverage was NOT certified"
+    )
 
 
 def normalize_intervals(items: list[dict[str, Any]]) -> list[dict[str, Any]]:

@@ -94,3 +94,35 @@ def test_timestamp_or_range_errors_are_rejected():
         attestation_range([
             HistoryRow(20.0, "off"), HistoryRow(10.0, "on")
         ], 0.0, 30.0)
+
+
+
+def test_redundant_home_assistant_samples_are_accepted():
+    """Repeated identical states do not add unobserved transitions."""
+    expected = [HistoryRow(10.0, "on"), HistoryRow(50.0, "off")]
+    recorder = [
+        (10.0, "on"),
+        (20.0, "on"),
+        (49.0, "on"),
+        (50.0, "off"),
+        (60.0, "off"),
+    ]
+    compare_recorded_rows(expected, recorder)
+    # Fingerprint still covers *all* persisted observations.
+    assert state_fingerprint(recorder) != state_fingerprint(recorder[:-1])
+
+
+@pytest.mark.parametrize(
+    "recorder",
+    [
+        [(10.0, "on"), (20.0, "off"), (30.0, "on"), (50.0, "off")],
+        [(10.0, "on"), (20.0, "on"), (50.0, "on")],
+        [(10.0, "on"), (20.0, "on")],
+        [(5.0, "on"), (10.0, "on"), (50.0, "off")],
+        [(10.0, "on"), (50.0, "off"), (60.0, "on")],
+    ],
+)
+def test_missing_or_extra_changes_never_get_certified(recorder):
+    expected = [HistoryRow(10.0, "on"), HistoryRow(50.0, "off")]
+    with pytest.raises(HistoryVerificationError):
+        compare_recorded_rows(expected, recorder)

@@ -2,7 +2,7 @@
 
 MoreRecords is a **Home Assistant custom integration (development preview)** for importing historical CSV or CCU-Historian observations and **exporting Recorder states to CSV** to an **existing** entity's Recorder history, without changing its current state.
 
-> **Experimental beta — `0.1.0b2` prerelease.** MoreRecords writes to Home Assistant's private Recorder schema. Make a full Home Assistant backup first. Compatibility is not guaranteed across Home Assistant upgrades. Use only in a disposable test instance until you have verified your version.
+> **Experimental beta — `0.1.0b3` prerelease.** MoreRecords writes to Home Assistant's private Recorder schema. Make a full Home Assistant backup first. Compatibility is not guaranteed across Home Assistant upgrades. Use only in a disposable test instance until you have verified your version.
 
 ## Features
 
@@ -42,7 +42,7 @@ MoreRecords is a **Home Assistant custom integration (development preview)** for
 
 1. Open HACS → three-dot menu → **Custom repositories**.
 2. Enter `https://github.com/derhopp/MoreRecords`, choose **Integration**, and add it.
-3. Install the `0.1.0b2` **prerelease** from the custom HACS repository (enable beta/prerelease versions in HACS if necessary). This is not a stable release.
+3. Install the `0.1.0b3` **prerelease** from the custom HACS repository (enable beta/prerelease versions in HACS if necessary). This is not a stable release.
 4. Restart Home Assistant.
 5. Go to **Settings → Devices & services → Add integration** and search for **MoreRecords**.
 6. Open the integration's **Configure** action and choose **Import** or **Export CSV**. There is no separate dashboard panel.
@@ -175,6 +175,6 @@ MIT — see [LICENSE](LICENSE).
 
 MoreRecords can optionally save a **local, per-entity coverage attestation** only after a CCU-Historian import or *verification-only* query: the operator explicitly confirms that CCU-Historian stored **every state change** in the queried interval and MoreRecords verifies all returned observations against the actual Recorder rows. The attestation starts at the first real source observation; no initial state is invented. It contains entity ID and UTC time bounds only, never raw readings or Historian credentials, and is stored in Home Assistant `.storage/more_records_verified_history_v1`.
 
-An unchanged `on` state over many weeks is eligible *only when the whole queried interval is confirmed complete* and its source readings match Recorder. Merely seeing an old state in a CSV is insufficient. Importing older data via CSV **does not** establish continuous coverage. If no new rows need writing, a CCU-Historian query can still be explicitly verified; the importer will not overwrite existing Recorder history. A mismatched source/Recorder query is rejected for coverage, and an import might already have been committed before the final check. Be sure the queried interval has no missing or untrusted CCU measurements before confirming.
+An unchanged `on` or `off` state over many weeks can be certified for **both presence and light entities** only when the complete CCU-Historian interval is explicitly confirmed and all source observations are present in Recorder. Extra Home Assistant samples repeating the same value do not invalidate verification; an additional change, a missing source observation, or a conflicting value does. The stored fingerprint still binds *every* Recorder row in the interval, including redundant entries. Merely seeing an old state in a CSV is insufficient. Importing via CSV **does not** establish continuous coverage. If no new rows need writing, a CCU-Historian query can still be explicitly verified; the importer will not overwrite existing Recorder history. A mismatched source/Recorder query is rejected for coverage, and an import might already have been committed before the final check. Be sure the queried interval has no missing or untrusted CCU measurements before confirming.
 
 LightAway can use such entity-specific verified intervals separately from actual Recorder runs, without fabricating `RecorderRuns` records. **Do not manually edit the coverage store.** If you change, purge or replace the recorded history, re-import/re-verify the original Historian interval before trusting it. The coverage attestation is a claim about complete source observation, not about the Recorder process running in the past.
