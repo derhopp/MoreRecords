@@ -161,6 +161,11 @@ def plan_missing(
             window_start=support_window[0], window_end=support_window[1],
             timezone_name=support_timezone, purge_before=purge_before,
             newest_recorded=newest,
+            conflicting_source_timestamps=frozenset(
+                row.timestamp for row in rows
+                if row.timestamp in stored_at_time
+                and stored_at_time[row.timestamp].value != row.value
+            ),
         )
     bridge: HistoryRow | None = None
     bridge_next_state_id: int | None = None
