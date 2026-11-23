@@ -325,6 +325,7 @@ class MoreRecordsOptionsFlow(OptionsFlow):
                     vol.Required("entity_id"): EntitySelector({}),
                     vol.Required("start_time"): DateTimeSelector({}),
                     vol.Required("end_time"): DateTimeSelector({}),
+                    vol.Optional("reconstruct_initial_state", default=False): bool,
                 }
             ),
             errors=errors,
