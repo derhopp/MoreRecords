@@ -122,6 +122,18 @@
         "oldest_recorder": "Use oldest state of Recorder",
         "unavailable": "Mark gap unavailable"
       }
+    },
+    "operation": {
+      "options": {
+        "import": "Import",
+        "export": "Export CSV"
+      }
+    },
+    "import_source": {
+      "options": {
+        "csv": "CSV file",
+        "ccu_historian": "CCU-Historian"
+      }
     }
   }
 }
