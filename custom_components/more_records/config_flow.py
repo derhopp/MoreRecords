@@ -51,6 +51,7 @@ from .recorder_import import (
     async_merge_states,
 )
 from .validation import ValidationError, validate_rows
+from .ui_labels import preview_labels
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -145,6 +146,10 @@ class MoreRecordsOptionsFlow(OptionsFlow):
                 "its latest existing state"
             )
         purge_before = plan.purge_before
+        labels = preview_labels(
+            self.hass.config.language, self._gap_mode,
+            self._source == "ccu_historian", self._daily_support,
+        )
 
         self._rows = normalized
         self._plan = plan
@@ -153,28 +158,23 @@ class MoreRecordsOptionsFlow(OptionsFlow):
             "source": label,
             "total": str(plan.total),
             "importable": str(len(plan.eligible)),
-            "daily_support_enabled": "yes" if self._daily_support else "no",
+            "daily_support_enabled": labels["daily_support_enabled"],
             "daily_support_count": str(len(plan.support_rows)),
             "skipped": str(plan.skipped),
             "skipped_overlap": str(plan.skipped_exact),
             "skipped_retention": str(plan.skipped_retention),
             "skipped_after_latest": str(plan.skipped_after_latest),
             "conflicting_existing": str(plan.conflicting_exact),
-            "gap_mode": plan.gap_mode,
+            "gap_mode": labels["gap_mode"],
             "gap_marker": (
                 datetime.fromtimestamp(
                     plan.bridge.timestamp, timezone.utc
                 ).isoformat() + " → " + plan.bridge.value
-                if plan.bridge else "none"
+                if plan.bridge else labels["gap_marker_empty"]
             ),
             "duplicate_rows": "0",
             "conflicting_timestamps": "0",
-            "coverage": (
-                "CCU-Historian: requires a complete-query confirmation and "
-                "exact Recorder verification; no coverage for CSV imports"
-                if self._source == "ccu_historian"
-                else "CSV: no historical continuity is certified"
-            ),
+            "coverage": labels["coverage"],
             "retention": (
                 f"auto_purge=true, purge_keep_days={recorder.keep_days}"
                 if recorder.auto_purge else "auto_purge=false"
@@ -226,9 +226,9 @@ class MoreRecordsOptionsFlow(OptionsFlow):
                 vol.Required("source", default="csv"): SelectSelector(
                     {
                         "options": [
-                            {"value": "csv", "label": "CSV"},
-                            {"value": "ccu_historian", "label": "CCU-Historian"},
+                            "csv", "ccu_historian",
                         ],
+                        "translation_key": "import_source",
                         "mode": "dropdown",
                     }
                 ),
