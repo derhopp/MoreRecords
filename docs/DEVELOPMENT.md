@@ -14,7 +14,7 @@
 - Both preview and Recorder-thread commit read live settings. The commit re-evaluates the retention cutoff with its own current UTC time.
 - With auto-purge disabled, old states remain eligible regardless of `purge_keep_days`.
 - UI translations: English (default) and German.
-- HACS repository structure, tests and CI; experimental prereleases `0.1.0b1` and `0.1.0b2`; no stable release.
+- HACS repository structure, tests and CI; current experimental prerelease `0.1.0b5`; no stable release yet. See [Stable release checklist](RELEASE_CHECKLIST.md).
 
 ## Architecture
 
@@ -31,7 +31,9 @@
 - `recorder_import.py`: RecorderTask in the Recorder queue, with cutoff re-check in the transaction.
 - `translations/`: en/de translations, mirrored from `strings.json`.
 
-## Acceptance criteria before first release
+## Legacy acceptance criteria before first stable release
+
+The following reflects development work tracked alongside the more focused [stable-release readiness checklist](RELEASE_CHECKLIST.md). Completed CI coverage does **not** verify live Home Assistant compatibility.
 
 - [ ] Verify export UI and clickable signed download links under German/English HA frontends.
 - [ ] Test exporting light/switch/sensor raw states with repeated values, timezone/DST boundaries and purged history.
