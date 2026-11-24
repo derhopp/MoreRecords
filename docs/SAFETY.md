@@ -8,7 +8,7 @@ MoreRecords writes private Home Assistant Recorder tables. Use only after a **fu
 2. Confirm there is enough disk space for the expanded SQLite database.
 3. Test with a disposable Home Assistant instance and a copied database before enabling on a production system.
 4. Import only values with the same unit and state semantics as the destination entity. On/off states for `light` and `switch` are valid; physical `PRESS_SHORT`/`PRESS_LONG` event values are **not** equivalent to `on`/`off`.
-5. Preview the overlap report: the importer skips source measurements at or after the oldest destination Recorder state. No existing HA rows are overwritten.
+5. Preview the exact-timestamp merge report: eligible source observations can fill missing timestamps even within the original Recorder interval. Existing Recorder rows always take precedence at the same timestamp; no original HA rows are overwritten.
 
 ## Recorder CSV exports
 
@@ -48,4 +48,4 @@ No artificial HA `RecorderRuns` are inserted. The metadata does not independentl
 
 ## Exact timestamp merges and user-selected gap states
 
-The current development branch can add missing source timestamps inside the existing HA Recorder interval. Original stored rows, attributes, timestamps and values are authoritative at exact collisions. The user's explicit gap mode controls the interval from the final imported prefix observation until the first original Recorder state: hold last source value, adopt first Recorder state, or mark unavailable. The latter two may write an artificial state 1 microsecond after the imported sample. These are modeling choices, **not measured events**, and must not be reported as verified CCU-Historian continuity. An import preview signature is checked again during the actual Recorder write; changes require a fresh preview and confirmation. Live database integration tests are still required before production use.
+The current integration can add missing source timestamps inside the existing HA Recorder interval. Original stored rows, attributes, timestamps and values are authoritative at exact collisions. The user's explicit gap mode controls the interval from the final imported prefix observation until the first original Recorder state: hold last source value, adopt first Recorder state, or mark unavailable. The latter two may write an artificial state 1 microsecond after the imported sample. These are modeling choices, **not measured events**, and must not be reported as verified CCU-Historian continuity. An import preview signature is checked again during the actual Recorder write; changes require a fresh preview and confirmation. Live database integration tests are still required before production use.

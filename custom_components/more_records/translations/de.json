@@ -122,6 +122,18 @@
         "oldest_recorder": "Ältesten Recorder-Zustand übernehmen",
         "unavailable": "Lücke als nicht verfügbar markieren"
       }
+    },
+    "operation": {
+      "options": {
+        "import": "Importieren",
+        "export": "CSV exportieren"
+      }
+    },
+    "import_source": {
+      "options": {
+        "csv": "CSV-Datei",
+        "ccu_historian": "CCU-Historian"
+      }
     }
   }
 }
