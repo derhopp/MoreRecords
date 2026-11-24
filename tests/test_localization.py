@@ -21,7 +21,7 @@ from custom_components.more_records.ui_labels import (
 
 ROOT = Path(__file__).resolve().parents[1] / "custom_components" / "more_records"
 PLACEHOLDER = re.compile(r"(?<!{){([a-z][a-z0-9_]*)}(?!})")
-BROKEN_TEXT = re.compile(r"(?i)\\b(?:foo_bar_foo|todo|tbd|placeholder)\\b")
+BROKEN_TEXT = re.compile(r"(?i)\b(?:foo_bar_foo|todo|tbd|placeholder)\b")
 
 
 def flatten(data, prefix=""):
