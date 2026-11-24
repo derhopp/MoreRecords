@@ -208,10 +208,9 @@ class MoreRecordsOptionsFlow(OptionsFlow):
             data_schema=vol.Schema(
                 {
                     vol.Required("operation", default="import"): SelectSelector(
-                        {"options": [
-                            {"value": "import", "label": "Import"},
-                            {"value": "export", "label": "Export CSV"},
-                        ], "mode": "dropdown"}
+                        {"options": ["import", "export"],
+                         "translation_key": "operation",
+                         "mode": "dropdown"}
                     )
                 }
             ),
